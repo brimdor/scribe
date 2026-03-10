@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useTheme } from '../../context/ThemeContext';
+import { getOrgs, getRepos } from '../../services/github';
 import './SettingsPanel.css';
 
 export default function SettingsPanel({ isOpen, onClose }) {
@@ -26,13 +27,44 @@ export default function SettingsPanel({ isOpen, onClose }) {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
-  const repoLabel = selectedRepo
-    ? `${selectedRepo.owner?.login || selectedRepo.owner || 'unknown'}/${selectedRepo.name}`
-    : 'Not selected';
+  
+  const [orgs, setOrgs] = useState([]);
+  const [repos, setRepos] = useState([]);
+  const [fetchingOrgs, setFetchingOrgs] = useState(false);
+  const [fetchingRepos, setFetchingRepos] = useState(false);
 
   useEffect(() => {
     setForm(settings);
   }, [settings, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && user) {
+      setFetchingOrgs(true);
+      getOrgs()
+        .then(orgsData => {
+          // User's own login + organizations
+          setOrgs([{ login: user.login }, ...orgsData]);
+        })
+        .catch(err => {
+          console.error('Failed to fetch orgs', err);
+          // Fallback to just user if fetching orgs fails
+          setOrgs([{ login: user.login }]);
+        })
+        .finally(() => setFetchingOrgs(false));
+    }
+  }, [isOpen, user]);
+
+  useEffect(() => {
+    if (isOpen && form.githubOwner) {
+      setFetchingRepos(true);
+      getRepos(form.githubOwner)
+        .then(reposData => setRepos(reposData))
+        .catch(err => console.error('Failed to fetch repos', err))
+        .finally(() => setFetchingRepos(false));
+    } else {
+      setRepos([]);
+    }
+  }, [isOpen, form.githubOwner]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -182,35 +214,62 @@ export default function SettingsPanel({ isOpen, onClose }) {
               <small>Session and repository defaults</small>
             </div>
 
-            <div className="settings-card">
-              <div className="settings-card-row">
-                <span>Signed in as</span>
-                <strong>{user?.login || 'Not connected'}</strong>
-              </div>
-              <div className="settings-card-row">
-                <span>Selected repository</span>
-                <strong>{repoLabel}</strong>
+            <div className="settings-card settings-oauth-card">
+              <div className="settings-card-row settings-oauth-row">
+                <div>
+                  <span>GitHub connection</span>
+                  <strong>{user ? 'Connected' : 'Not connected'}</strong>
+                </div>
+                <div className={`settings-oauth-badge ${user ? 'success' : 'error'}`}>
+                  {user ? 'Connected' : 'Disconnected'}
+                </div>
               </div>
             </div>
 
             <label className="settings-field">
               <span>Default owner or org</span>
-              <input
+              <select
                 name="githubOwner"
-                value={form.githubOwner}
+                value={form.githubOwner || ''}
                 onChange={handleChange}
-                placeholder="brimdor"
-              />
+                disabled={fetchingOrgs || !orgs.length}
+              >
+                {fetchingOrgs ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  <>
+                    <option value="" disabled>Select owner/org</option>
+                    {orgs.map((org) => (
+                      <option key={org.login} value={org.login}>
+                        {org.login}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
             </label>
 
             <label className="settings-field">
               <span>Default repository</span>
-              <input
+              <select
                 name="githubRepo"
-                value={form.githubRepo}
+                value={form.githubRepo || ''}
                 onChange={handleChange}
-                placeholder="scribe-notes"
-              />
+                disabled={!form.githubOwner || fetchingRepos || !repos.length}
+              >
+                {fetchingRepos ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  <>
+                    <option value="" disabled>Select repository</option>
+                    {repos.map((repo) => (
+                      <option key={repo.id} value={repo.name}>
+                        {repo.name}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
             </label>
           </section>
 
