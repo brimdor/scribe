@@ -1,13 +1,19 @@
+import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { SettingsProvider } from './context/SettingsContext';
+import { SettingsProvider, useSettings } from './context/SettingsContext';
 import { ThemeProvider } from './context/ThemeContext';
 import LoginPage from './components/Auth/LoginPage';
 import Layout from './components/Layout/Layout';
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
+  const { callbackInProgress, completeOpenAICallback } = useSettings();
 
-  if (loading) {
+  useEffect(() => {
+    completeOpenAICallback();
+  }, [completeOpenAICallback]);
+
+  if (loading || callbackInProgress) {
     return (
       <div style={{
         display: 'flex',
@@ -20,7 +26,7 @@ function AppContent() {
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>✍️</div>
-          <div>Loading Scribe...</div>
+          <div>{callbackInProgress ? 'Finishing OpenAI sign-in...' : 'Loading Scribe...'}</div>
         </div>
       </div>
     );

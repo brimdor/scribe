@@ -6,7 +6,19 @@ import './SettingsPanel.css';
 
 export default function SettingsPanel({ isOpen, onClose }) {
   const { user, selectedRepo } = useAuth();
-  const { settings, saveSettings, loading } = useSettings();
+  const {
+    settings,
+    saveSettings,
+    loading,
+    openAIOAuthSession,
+    openAIOAuthPendingFlow,
+    openAIOAuthStatus,
+    openAIOAuthMessage,
+    oauthBusy,
+    connectOpenAI,
+    disconnectOpenAI,
+    clearOpenAIMessage,
+  } = useSettings();
   const { theme, isManual, setTheme } = useTheme();
   const [form, setForm] = useState(settings);
   const [error, setError] = useState('');
@@ -36,6 +48,26 @@ export default function SettingsPanel({ isOpen, onClose }) {
   }, [isOpen, onClose]);
 
   const themeValue = useMemo(() => (isManual ? theme : 'system'), [isManual, theme]);
+  const isOAuthConnected = openAIOAuthStatus === 'connected' && !!openAIOAuthSession;
+  const isOAuthConnecting = openAIOAuthStatus === 'connecting';
+  const devicePendingFlow = openAIOAuthPendingFlow?.type === 'device' ? openAIOAuthPendingFlow : null;
+  const messageLooksLikeError = !!openAIOAuthMessage
+    && !isOAuthConnected
+    && !isOAuthConnecting
+    && !oauthBusy
+    && !/^OpenAI sign-in (canceled|disconnected)\.?$/i.test(openAIOAuthMessage.trim());
+  const connectionTone = error || openAIOAuthStatus === 'error' || messageLooksLikeError
+    ? 'error'
+    : isOAuthConnecting || oauthBusy
+      ? 'info'
+      : 'success';
+  const connectionLabel = isOAuthConnected
+    ? 'Connected'
+    : isOAuthConnecting
+      ? 'Awaiting approval'
+      : openAIOAuthStatus === 'error'
+        ? 'Needs attention'
+        : 'Disconnected';
 
   if (!isOpen) {
     return null;
@@ -46,6 +78,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
     setForm((current) => ({ ...current, [name]: value }));
     setError('');
     setStatus('');
+    clearOpenAIMessage();
   };
 
   const handleThemeChange = (event) => {
@@ -53,11 +86,29 @@ export default function SettingsPanel({ isOpen, onClose }) {
     setStatus('Appearance updated.');
   };
 
+  const handleConnect = async () => {
+    setError('');
+    setStatus('');
+    await connectOpenAI();
+  };
+
+  const handleDisconnect = async () => {
+    setError('');
+    setStatus('');
+    await disconnectOpenAI();
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!form.agentBaseUrl.trim()) {
-      setError('Agent base URL is required.');
+    if (form.openaiConnectionMethod !== 'oauth' && !form.agentBaseUrl.trim()) {
+      setError('Agent base URL is required for manual provider mode.');
+      setStatus('');
+      return;
+    }
+
+    if (form.openaiConnectionMethod === 'oauth' && !isOAuthConnected) {
+      setError('Connect OpenAI before switching Scribe to OpenAI sign-in mode.');
       setStatus('');
       return;
     }
@@ -83,7 +134,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
           <div>
             <p className="settings-panel-eyebrow">Workspace configuration</p>
             <h2>Settings</h2>
-            <p className="settings-panel-subtitle">Customize your environment, GitHub defaults, and OpenAI-compatible agent connection.</p>
+            <p className="settings-panel-subtitle">Customize your environment, GitHub defaults, and AI connection mode.</p>
           </div>
           <button type="button" className="btn-icon settings-panel-close" onClick={onClose} aria-label="Close settings">
             ✕
@@ -157,9 +208,60 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
           <section className="settings-section settings-section-agent">
             <div className="settings-section-heading">
-              <span>OpenAI-compatible agent</span>
-              <small>Required endpoint, optional credentials</small>
+              <span>OpenAI and compatible providers</span>
+              <small>Use OpenAI sign-in or keep the manual endpoint workflow</small>
             </div>
+
+            <div className="settings-card settings-oauth-card">
+              <div className="settings-card-row settings-oauth-row">
+                <div>
+                  <span>OpenAI sign-in</span>
+                  <strong>{connectionLabel}</strong>
+                </div>
+                <div className={`settings-oauth-badge ${connectionTone}`}>
+                  {connectionLabel}
+                </div>
+              </div>
+
+              <div className="settings-card-row settings-oauth-row">
+                <span>Account</span>
+                <strong>{openAIOAuthSession?.email || 'Not connected'}</strong>
+              </div>
+
+              <p className="settings-helper-text">
+                Connect OpenAI once and Scribe can use your OpenAI account without a manually pasted OpenAI API key.
+              </p>
+
+              {devicePendingFlow && (
+                <div className="settings-oauth-device-flow">
+                  <div className="settings-oauth-device-header">
+                    <span>One-time code</span>
+                    <a href={devicePendingFlow.verificationUrl} target="_blank" rel="noreferrer">Open OpenAI</a>
+                  </div>
+                  <div className="settings-oauth-device-code">{devicePendingFlow.userCode}</div>
+                  <p className="settings-helper-text">
+                    Enter this code at OpenAI, then return here. Scribe will finish connecting automatically.
+                  </p>
+                </div>
+              )}
+
+              <div className="settings-oauth-actions">
+                <button type="button" className="btn-primary" onClick={handleConnect} disabled={oauthBusy || saving || loading || isOAuthConnecting}>
+                  {isOAuthConnecting ? 'Waiting for approval...' : isOAuthConnected ? 'Reconnect OpenAI' : 'Connect OpenAI'}
+                </button>
+                <button type="button" className="btn-ghost" onClick={handleDisconnect} disabled={(!isOAuthConnected && !isOAuthConnecting) || oauthBusy || saving || loading}>
+                  {isOAuthConnecting ? 'Cancel' : 'Disconnect'}
+                </button>
+              </div>
+            </div>
+
+            <label className="settings-field">
+              <span>Connection mode</span>
+              <select name="openaiConnectionMethod" value={form.openaiConnectionMethod} onChange={handleChange}>
+                <option value="manual">Manual endpoint</option>
+                <option value="oauth" disabled={!isOAuthConnected}>OpenAI sign-in</option>
+              </select>
+            </label>
 
             <label className="settings-field">
               <span>Base URL</span>
@@ -168,7 +270,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
                 value={form.agentBaseUrl}
                 onChange={handleChange}
                 placeholder="http://localhost:11434/v1"
-                required
+                disabled={form.openaiConnectionMethod === 'oauth'}
               />
             </label>
 
@@ -181,10 +283,13 @@ export default function SettingsPanel({ isOpen, onClose }) {
                 onChange={handleChange}
                 placeholder="Optional"
                 autoComplete="off"
+                disabled={form.openaiConnectionMethod === 'oauth'}
               />
             </label>
 
-            <p className="settings-helper-text">Leave the API key blank for local providers. Scribe will automatically use <code>1234</code>.</p>
+            <p className="settings-helper-text">
+              Keep manual mode for local or third-party OpenAI-compatible providers. If that provider does not require an API key, Scribe will continue to use <code>1234</code> as the fallback value.
+            </p>
 
             <label className="settings-field">
               <span>Model</span>
@@ -197,15 +302,15 @@ export default function SettingsPanel({ isOpen, onClose }) {
             </label>
           </section>
 
-          {(error || status || loading) && (
-            <div className={`settings-status ${error ? 'error' : 'success'}`}>
-              {loading ? 'Loading saved settings...' : error || status}
+          {(error || status || loading || openAIOAuthMessage) && (
+            <div className={`settings-status ${error ? 'error' : connectionTone}`}>
+              {loading ? 'Loading saved settings...' : error || openAIOAuthMessage || status}
             </div>
           )}
 
           <div className="settings-panel-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={saving || loading}>
+            <button type="submit" className="btn-primary" disabled={saving || loading || oauthBusy}>
               {saving ? 'Saving...' : 'Save settings'}
             </button>
           </div>
