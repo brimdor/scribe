@@ -212,93 +212,106 @@ export default function SettingsPanel({ isOpen, onClose }) {
               <small>Use OpenAI sign-in or keep the manual endpoint workflow</small>
             </div>
 
-            <div className="settings-card settings-oauth-card">
-              <div className="settings-card-row settings-oauth-row">
-                <div>
-                  <span>OpenAI sign-in</span>
-                  <strong>{connectionLabel}</strong>
-                </div>
-                <div className={`settings-oauth-badge ${connectionTone}`}>
-                  {connectionLabel}
-                </div>
-              </div>
-
-              <div className="settings-card-row settings-oauth-row">
-                <span>Account</span>
-                <strong>{openAIOAuthSession?.email || 'Not connected'}</strong>
-              </div>
-
-              <p className="settings-helper-text">
-                Connect OpenAI once and Scribe can use your OpenAI account without a manually pasted OpenAI API key.
-              </p>
-
-              {devicePendingFlow && (
-                <div className="settings-oauth-device-flow">
-                  <div className="settings-oauth-device-header">
-                    <span>One-time code</span>
-                    <a href={devicePendingFlow.verificationUrl} target="_blank" rel="noreferrer">Open OpenAI</a>
-                  </div>
-                  <div className="settings-oauth-device-code">{devicePendingFlow.userCode}</div>
-                  <p className="settings-helper-text">
-                    Enter this code at OpenAI, then return here. Scribe will finish connecting automatically.
-                  </p>
-                </div>
-              )}
-
-              <div className="settings-oauth-actions">
-                <button type="button" className="btn-primary" onClick={handleConnect} disabled={oauthBusy || saving || loading || isOAuthConnecting}>
-                  {isOAuthConnecting ? 'Waiting for approval...' : isOAuthConnected ? 'Reconnect OpenAI' : 'Connect OpenAI'}
-                </button>
-                <button type="button" className="btn-ghost" onClick={handleDisconnect} disabled={(!isOAuthConnected && !isOAuthConnecting) || oauthBusy || saving || loading}>
-                  {isOAuthConnecting ? 'Cancel' : 'Disconnect'}
-                </button>
-              </div>
-            </div>
-
             <label className="settings-field">
               <span>Connection mode</span>
               <select name="openaiConnectionMethod" value={form.openaiConnectionMethod} onChange={handleChange}>
-                <option value="manual">Manual endpoint</option>
-                <option value="oauth" disabled={!isOAuthConnected}>OpenAI sign-in</option>
+                <option value="oauth">OpenAI sign-in</option>
+                <option value="manual">OpenAI API manual connection</option>
               </select>
             </label>
 
-            <label className="settings-field">
-              <span>Base URL</span>
-              <input
-                name="agentBaseUrl"
-                value={form.agentBaseUrl}
-                onChange={handleChange}
-                placeholder="http://localhost:11434/v1"
-                disabled={form.openaiConnectionMethod === 'oauth'}
-              />
-            </label>
+            {form.openaiConnectionMethod === 'oauth' && (
+              <div className="settings-card settings-oauth-card">
+                <div className="settings-card-row settings-oauth-row">
+                  <div>
+                    <span>OpenAI sign-in</span>
+                    <strong>{connectionLabel}</strong>
+                  </div>
+                  <div className={`settings-oauth-badge ${connectionTone}`}>
+                    {connectionLabel}
+                  </div>
+                </div>
 
-            <label className="settings-field">
-              <span>API key</span>
-              <input
-                name="agentApiKey"
-                type="password"
-                value={form.agentApiKey}
-                onChange={handleChange}
-                placeholder="Optional"
-                autoComplete="off"
-                disabled={form.openaiConnectionMethod === 'oauth'}
-              />
-            </label>
+                <div className="settings-card-row settings-oauth-row">
+                  <span>Account</span>
+                  <strong>{openAIOAuthSession?.email || 'Not connected'}</strong>
+                </div>
 
-            <p className="settings-helper-text">
-              Keep manual mode for local or third-party OpenAI-compatible providers. If that provider does not require an API key, Scribe will continue to use <code>1234</code> as the fallback value.
-            </p>
+                <p className="settings-helper-text">
+                  Connect OpenAI once and Scribe can use your OpenAI account without a manually pasted OpenAI API key.
+                </p>
+
+                {devicePendingFlow && (
+                  <div className="settings-oauth-device-flow">
+                    <div className="settings-oauth-device-header">
+                      <span>One-time code</span>
+                      <a href={devicePendingFlow.verificationUrl} target="_blank" rel="noreferrer">Open OpenAI</a>
+                    </div>
+                    <div className="settings-oauth-device-code">{devicePendingFlow.userCode}</div>
+                    <p className="settings-helper-text">
+                      Enter this code at OpenAI, then return here. Scribe will finish connecting automatically.
+                    </p>
+                  </div>
+                )}
+
+                <div className="settings-oauth-actions">
+                  <button type="button" className="btn-primary" onClick={handleConnect} disabled={oauthBusy || saving || loading || isOAuthConnecting}>
+                    {isOAuthConnecting ? 'Waiting for approval...' : isOAuthConnected ? 'Reconnect OpenAI' : 'Connect OpenAI'}
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={handleDisconnect} disabled={(!isOAuthConnected && !isOAuthConnecting) || oauthBusy || saving || loading}>
+                    {isOAuthConnecting ? 'Cancel' : 'Disconnect'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {form.openaiConnectionMethod !== 'oauth' && (
+              <>
+                <label className="settings-field">
+                  <span>Base URL</span>
+                  <input
+                    name="agentBaseUrl"
+                    value={form.agentBaseUrl}
+                    onChange={handleChange}
+                    placeholder="http://localhost:11434/v1"
+                  />
+                </label>
+
+                <label className="settings-field">
+                  <span>API key</span>
+                  <input
+                    name="agentApiKey"
+                    type="password"
+                    value={form.agentApiKey}
+                    onChange={handleChange}
+                    placeholder="Optional"
+                    autoComplete="off"
+                  />
+                </label>
+
+                <p className="settings-helper-text">
+                  Keep manual mode for local or third-party OpenAI-compatible providers. If that provider does not require an API key, Scribe will continue to use <code>1234</code> as the fallback value.
+                </p>
+              </>
+            )}
 
             <label className="settings-field">
               <span>Model</span>
               <input
                 name="agentModel"
+                list="agent-models"
                 value={form.agentModel}
                 onChange={handleChange}
-                placeholder="gpt-4"
+                placeholder="gpt-4o"
               />
+              <datalist id="agent-models">
+                <option value="gpt-4o" />
+                <option value="chatgpt-4o-latest" />
+                <option value="gpt-4o-mini" />
+                <option value="o1" />
+                <option value="o1-mini" />
+                <option value="o3-mini" />
+              </datalist>
             </label>
           </section>
 

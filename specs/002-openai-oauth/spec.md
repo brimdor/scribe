@@ -78,6 +78,8 @@ As a user who may switch between OpenAI and other OpenAI-compatible providers, I
 - **FR-010**: The application MUST provide actionable error feedback for canceled approvals, expired or invalid callback data, and failed token exchange attempts.
 - **FR-011**: The application MUST prevent chat requests from silently failing when OpenAI OAuth is required but unavailable, and MUST direct the user to reconnect or switch configuration.
 - **FR-012**: The application MUST keep the OpenAI OAuth setup and management experience usable on desktop and mobile layouts.
+- **FR-013**: The application MUST hide the Base URL and API key fields in the settings when the "OpenAI sign-in" connection mode is selected.
+- **FR-014**: The application MUST provide a dropdown or datalist of common OpenAI models instead of requiring the user to type the model name manually.
 
 ### Key Entities *(include if feature involves data)*
 
