@@ -1,0 +1,148 @@
+.message-bubble {
+  display: flex;
+  gap: var(--space-md);
+  animation: fadeInUp var(--transition-fast) ease-out;
+  max-width: 100%;
+}
+
+.message-bubble.user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  margin-top: 4px;
+}
+
+.message-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+}
+
+.message-avatar.ai {
+  background: var(--gradient-primary);
+  color: white;
+  font-size: 1rem;
+}
+
+.message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-body {
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-lg);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+.message-bubble.user .message-body {
+  background: var(--user-bubble-bg);
+  color: var(--user-bubble-text);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.message-bubble.assistant .message-body {
+  background: var(--ai-bubble-bg);
+  color: var(--ai-bubble-text);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+/* Markdown rendering in AI messages */
+.message-bubble.assistant .message-body h1,
+.message-bubble.assistant .message-body h2,
+.message-bubble.assistant .message-body h3 {
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.message-bubble.assistant .message-body h1:first-child,
+.message-bubble.assistant .message-body h2:first-child,
+.message-bubble.assistant .message-body h3:first-child {
+  margin-top: 0;
+}
+
+.message-bubble.assistant .message-body p {
+  margin-bottom: var(--space-sm);
+}
+
+.message-bubble.assistant .message-body p:last-child {
+  margin-bottom: 0;
+}
+
+.message-bubble.assistant .message-body ul,
+.message-bubble.assistant .message-body ol {
+  padding-left: var(--space-lg);
+  margin-bottom: var(--space-sm);
+}
+
+.message-bubble.assistant .message-body li {
+  margin-bottom: var(--space-xs);
+}
+
+.message-bubble.assistant .message-body pre {
+  margin: var(--space-sm) 0;
+}
+
+.message-bubble.assistant .message-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-sm) 0;
+  font-size: 0.8125rem;
+}
+
+.message-bubble.assistant .message-body th,
+.message-bubble.assistant .message-body td {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border-primary);
+  text-align: left;
+}
+
+.message-bubble.assistant .message-body th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.message-bubble.assistant .message-body blockquote {
+  border-left: 3px solid var(--accent-primary);
+  padding-left: var(--space-md);
+  margin: var(--space-sm) 0;
+  color: var(--text-secondary);
+}
+
+/* Streaming indicator */
+.message-body.streaming::after {
+  content: '▍';
+  animation: pulse 1s infinite;
+  color: var(--accent-primary);
+}
+
+.message-timestamp {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-sm);
+}
+
+.message-bubble.user .message-timestamp {
+  text-align: right;
+}
+
+@media (max-width: 768px) {
+  .message-body {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.875rem;
+  }
+}
