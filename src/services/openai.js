@@ -38,6 +38,23 @@ export function getOpenAIConfig() {
   return clientConfig;
 }
 
+export function normalizeGeneratedTitle(title) {
+  return title?.trim().replace(/^['"`]+|['"`]+$/g, '').replace(/\s+/g, ' ').trim() || '';
+}
+
+export function getFallbackTitle(userMessage, maxLength = 50) {
+  const normalizedMessage = userMessage?.replace(/\s+/g, ' ').trim() || '';
+  if (!normalizedMessage) {
+    return 'New Chat';
+  }
+
+  if (normalizedMessage.length <= maxLength) {
+    return normalizedMessage;
+  }
+
+  return `${normalizedMessage.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 /**
  * Send a chat completion request with streaming
  * @param {Array} messages - Array of { role, content } messages
@@ -103,7 +120,7 @@ export async function quickChat(prompt) {
  * Generate a conversation title from the first user message
  */
 export async function generateTitle(userMessage) {
-  return quickChat(
+  return normalizeGeneratedTitle(await quickChat(
     `Generate a short, descriptive title (3-6 words, no quotes) for a conversation that starts with: "${userMessage.slice(0, 200)}"`
-  );
+  ));
 }

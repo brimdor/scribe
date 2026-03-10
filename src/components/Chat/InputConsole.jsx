@@ -1,18 +1,33 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { createThread, addMessage, getMessagesByThread, updateThread } from '../../services/storage';
-import { streamChat, generateTitle } from '../../services/openai';
+import { createThread, addMessage, getMessagesByThread, getThread, updateThread } from '../../services/storage';
+import { streamChat, generateTitle, getFallbackTitle } from '../../services/openai';
 import { initOpenAI, getOpenAIClient } from '../../services/openai';
 import { getSchemaTemplate } from '../../schemas';
 import { useSettings } from '../../context/SettingsContext';
 import './InputConsole.css';
 
-export default function InputConsole({ threadId, activeSchema, onThreadCreated, refreshKey }) {
+export default function InputConsole({ threadId, activeSchema, onThreadCreated }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
   const { settings } = useSettings();
+
+  const updateThreadTitle = useCallback(async (currentThreadId, nextTitle) => {
+    const title = nextTitle?.trim();
+    if (!title) return;
+
+    await updateThread(currentThreadId, { title });
+    window.dispatchEvent(new CustomEvent('scribe:thread-updated', {
+      detail: { threadId: currentThreadId, title },
+    }));
+  }, []);
+
+  const canAutoTitleThread = useCallback(async (currentThreadId) => {
+    const thread = await getThread(currentThreadId);
+    return !thread?.title || thread.title === 'New Chat';
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -100,9 +115,10 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated, 
         await addMessage(aiMsg);
         window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));
         
-        // Auto-title
-        await updateThread(currentThreadId, { title: content.slice(0, 50) });
-        
+        if (await canAutoTitleThread(currentThreadId)) {
+          await updateThreadTitle(currentThreadId, getFallbackTitle(content));
+        }
+
         setSending(false);
         return;
       }
@@ -135,12 +151,13 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated, 
       if (history.length <= 1) {
         try {
           const title = await generateTitle(content);
-          if (title) {
-            await updateThread(currentThreadId, { title });
+          if (await canAutoTitleThread(currentThreadId)) {
+            await updateThreadTitle(currentThreadId, title || getFallbackTitle(content));
           }
         } catch {
-          // Title generation failed, use truncated message
-          await updateThread(currentThreadId, { title: content.slice(0, 50) });
+          if (await canAutoTitleThread(currentThreadId)) {
+            await updateThreadTitle(currentThreadId, getFallbackTitle(content));
+          }
         }
       }
     } catch (err) {
@@ -160,7 +177,7 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated, 
       setSending(false);
       abortRef.current = null;
     }
-  }, [text, sending, threadId, activeSchema, onThreadCreated]);
+  }, [text, sending, threadId, activeSchema, onThreadCreated, updateThreadTitle, canAutoTitleThread]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

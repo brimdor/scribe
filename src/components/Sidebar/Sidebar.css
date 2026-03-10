@@ -68,6 +68,7 @@
   min-height: 40px;
 }
 
+.thread-item:focus-within,
 .thread-item:hover {
   background: var(--bg-hover);
 }
@@ -85,6 +86,18 @@
   white-space: nowrap;
 }
 
+.thread-item-editing {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-focus);
+}
+
+.thread-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  padding: 6px 10px;
+}
+
 .thread-item.active .thread-item-title {
   color: var(--accent-primary);
   font-weight: 500;
@@ -100,7 +113,12 @@
   gap: 2px;
 }
 
+.thread-item:focus-within .thread-actions,
 .thread-item:hover .thread-actions {
+  display: flex;
+}
+
+.thread-actions-editing {
   display: flex;
 }
 
