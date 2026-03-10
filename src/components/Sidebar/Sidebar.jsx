@@ -14,6 +14,20 @@ export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, onO
     loadThreads();
   }, [loadThreads, refreshKey]);
 
+  useEffect(() => {
+    const handleThreadChange = () => {
+      loadThreads();
+    };
+
+    window.addEventListener('scribe:new-message', handleThreadChange);
+    window.addEventListener('scribe:thread-updated', handleThreadChange);
+
+    return () => {
+      window.removeEventListener('scribe:new-message', handleThreadChange);
+      window.removeEventListener('scribe:thread-updated', handleThreadChange);
+    };
+  }, [loadThreads]);
+
   const handleDelete = async (e, id) => {
     e.stopPropagation();
     await deleteThread(id);
@@ -24,7 +38,20 @@ export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, onO
   const handlePin = async (e, id, isPinned) => {
     e.stopPropagation();
     await updateThread(id, { isPinned: !isPinned });
+    window.dispatchEvent(new CustomEvent('scribe:thread-updated', { detail: { threadId: id } }));
     await loadThreads();
+  };
+
+  const handleRename = async (id, title) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return false;
+
+    await updateThread(id, { title: trimmedTitle });
+    window.dispatchEvent(new CustomEvent('scribe:thread-updated', {
+      detail: { threadId: id, title: trimmedTitle },
+    }));
+    await loadThreads();
+    return true;
   };
 
   const pinnedThreads = threads.filter(t => t.isPinned);
@@ -54,6 +81,7 @@ export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, onO
                 onSelect={onSelectThread}
                 onDelete={handleDelete}
                 onPin={handlePin}
+                onRename={handleRename}
               />
             ))}
           </div>
@@ -75,6 +103,7 @@ export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, onO
               onSelect={onSelectThread}
               onDelete={handleDelete}
               onPin={handlePin}
+              onRename={handleRename}
             />
           ))
         )}
@@ -92,7 +121,68 @@ export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, onO
   );
 }
 
-function ThreadItem({ thread, isActive, onSelect, onDelete, onPin }) {
+function ThreadItem({ thread, isActive, onSelect, onDelete, onPin, onRename }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(thread.title || 'New Chat');
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftTitle(thread.title || 'New Chat');
+    }
+  }, [thread.title, isEditing]);
+
+  const startEditing = (e) => {
+    e.stopPropagation();
+    setDraftTitle(thread.title || 'New Chat');
+    setIsEditing(true);
+  };
+
+  const cancelEditing = (e) => {
+    e?.stopPropagation();
+    setDraftTitle(thread.title || 'New Chat');
+    setIsEditing(false);
+  };
+
+  const submitRename = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const renamed = await onRename(thread.id, draftTitle);
+    if (renamed) {
+      setIsEditing(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <form className={`thread-item thread-item-editing ${isActive ? 'active' : ''}`} onSubmit={submitRename}>
+        {thread.isPinned && <span className="thread-pin-icon">📌</span>}
+        <input
+          className="thread-title-input"
+          value={draftTitle}
+          onChange={(e) => setDraftTitle(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              cancelEditing(e);
+            }
+          }}
+          autoFocus
+          maxLength={80}
+          aria-label="Edit chat title"
+        />
+        <div className="thread-actions thread-actions-editing">
+          <button type="submit" className="thread-action-btn" title="Save title" aria-label="Save title">
+            ✓
+          </button>
+          <button type="button" className="thread-action-btn" onClick={cancelEditing} title="Cancel rename" aria-label="Cancel rename">
+            ✕
+          </button>
+        </div>
+      </form>
+    );
+  }
+
   return (
     <div
       className={`thread-item ${isActive ? 'active' : ''}`}
@@ -104,6 +194,14 @@ function ThreadItem({ thread, isActive, onSelect, onDelete, onPin }) {
       {thread.isPinned && <span className="thread-pin-icon">📌</span>}
       <span className="thread-item-title">{thread.title || 'New Chat'}</span>
       <div className="thread-actions">
+        <button
+          className="thread-action-btn"
+          onClick={startEditing}
+          title="Rename"
+          aria-label={`Rename ${thread.title || 'New Chat'}`}
+        >
+          ✏️
+        </button>
         <button
           className="thread-action-btn"
           onClick={(e) => onPin(e, thread.id, thread.isPinned)}

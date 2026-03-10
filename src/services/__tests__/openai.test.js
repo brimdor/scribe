@@ -28,4 +28,12 @@ describe('openai service', () => {
       dangerouslyAllowBrowser: true,
     }));
   });
+
+  it('normalizes generated titles and falls back to truncated prompts', async () => {
+    const { normalizeGeneratedTitle, getFallbackTitle } = await import('../openai');
+
+    expect(normalizeGeneratedTitle('  "Sprint Planning Notes"  ')).toBe('Sprint Planning Notes');
+    expect(getFallbackTitle('   Draft a project kickoff agenda with owners and dates   ', 24)).toBe('Draft a project kickoff…');
+    expect(getFallbackTitle('   ')).toBe('New Chat');
+  });
 });
