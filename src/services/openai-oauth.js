@@ -330,6 +330,7 @@ async function createCodexResponse({ session, model, messages, schemaContext, si
       instructions: buildInstructions(schemaContext),
       input: toResponsesInput(messages),
       stream,
+      store: false,
     }),
   });
 
