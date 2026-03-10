@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getSetting, setSetting } from '../services/storage';
+import { useAuth } from './AuthContext';
 
 const ThemeContext = createContext(null);
 
@@ -11,18 +12,24 @@ function getSystemTheme() {
 }
 
 export function ThemeProvider({ children }) {
+  const { isAuthenticated } = useAuth();
   const [theme, setThemeState] = useState(getSystemTheme());
   const [isManual, setIsManual] = useState(false);
 
-  // Load saved theme preference
   useEffect(() => {
+    if (!isAuthenticated) {
+      setThemeState(getSystemTheme());
+      setIsManual(false);
+      return;
+    }
+
     getSetting('theme').then(saved => {
       if (saved) {
         setThemeState(saved);
         setIsManual(true);
       }
     });
-  }, []);
+  }, [isAuthenticated]);
 
   // Apply theme to document
   useEffect(() => {

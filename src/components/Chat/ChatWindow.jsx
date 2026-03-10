@@ -16,6 +16,7 @@ export default function ChatWindow({ threadId, activeSchema, onSendSuggestion })
   const [messages, setMessages] = useState([]);
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [streamingModelMeta, setStreamingModelMeta] = useState(null);
   const messagesEndRef = useRef(null);
 
   const loadMessages = useCallback(async () => {
@@ -39,19 +40,34 @@ export default function ChatWindow({ threadId, activeSchema, onSendSuggestion })
       }
     };
 
-    const handleStreamStart = () => {
+    const handleStreamStart = (e) => {
+      if (threadId && e?.detail?.threadId && e.detail.threadId !== threadId) {
+        return;
+      }
       setStreaming(true);
       setStreamingContent('');
+      setStreamingModelMeta(e?.detail?.modelMeta || null);
     };
 
     const handleStreamChunk = (e) => {
+      if (threadId && e.detail?.threadId && e.detail.threadId !== threadId) {
+        return;
+      }
       setStreamingContent(e.detail.fullText);
+    };
+
+    const handleStreamMeta = (e) => {
+      if (threadId && e.detail?.threadId && e.detail.threadId !== threadId) {
+        return;
+      }
+      setStreamingModelMeta(e.detail?.modelMeta || null);
     };
 
     const handleStreamEnd = (e) => {
       setStreaming(false);
       setStreamingContent('');
-      if (e.detail.threadId === threadId) {
+      setStreamingModelMeta(null);
+      if (e?.detail?.threadId === threadId) {
         loadMessages();
       }
     };
@@ -59,12 +75,14 @@ export default function ChatWindow({ threadId, activeSchema, onSendSuggestion })
     window.addEventListener('scribe:new-message', handleNewMessage);
     window.addEventListener('scribe:stream-start', handleStreamStart);
     window.addEventListener('scribe:stream-chunk', handleStreamChunk);
+    window.addEventListener('scribe:stream-meta', handleStreamMeta);
     window.addEventListener('scribe:stream-end', handleStreamEnd);
 
     return () => {
       window.removeEventListener('scribe:new-message', handleNewMessage);
       window.removeEventListener('scribe:stream-start', handleStreamStart);
       window.removeEventListener('scribe:stream-chunk', handleStreamChunk);
+      window.removeEventListener('scribe:stream-meta', handleStreamMeta);
       window.removeEventListener('scribe:stream-end', handleStreamEnd);
     };
   }, [threadId, loadMessages]);
@@ -113,7 +131,7 @@ export default function ChatWindow({ threadId, activeSchema, onSendSuggestion })
         ))}
         {streaming && streamingContent && (
           <MessageBubble
-            message={{ role: 'assistant', content: streamingContent }}
+            message={{ role: 'assistant', content: streamingContent, modelMeta: streamingModelMeta }}
             isStreaming
           />
         )}

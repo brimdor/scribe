@@ -1,66 +1,75 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getStoredToken, storeToken, clearToken, getStoredUser, storeUser } from '../services/auth';
-import { initGitHub, getUser } from '../services/github';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { ApiError } from '../services/api';
+import { getCurrentSession, loginWithGitHub, logoutSession } from '../services/auth';
 import { getSetting, setSetting } from '../services/storage';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(getStoredUser());
-  const [token, setToken] = useState(getStoredToken());
+  const [user, setUser] = useState(null);
   const [selectedRepo, setSelectedRepoState] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load selected repo from IndexedDB on mount
   useEffect(() => {
-    getSetting('selectedRepo').then(repo => {
-      if (repo) setSelectedRepoState(repo);
-      setLoading(false);
-    });
-  }, []);
+    let mounted = true;
 
-  // Initialize GitHub client when token changes
-  useEffect(() => {
-    if (token) {
-      initGitHub(token);
-    }
-  }, [token]);
+    const hydrate = async () => {
+      try {
+        const sessionUser = await getCurrentSession();
+        if (!mounted) {
+          return;
+        }
+
+        setUser(sessionUser);
+        const repo = await getSetting('selectedRepo');
+        if (mounted) {
+          setSelectedRepoState(repo || null);
+        }
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
+        if (!(error instanceof ApiError && error.status === 401)) {
+          console.error('Failed to load auth session:', error);
+        }
+        setUser(null);
+        setSelectedRepoState(null);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    hydrate();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const login = useCallback(async (username, githubToken) => {
     if (!username || !githubToken) {
       throw new Error('Username and token are required');
     }
 
-    storeToken(githubToken);
-    setToken(githubToken);
-    initGitHub(githubToken);
+    const sessionUser = await loginWithGitHub(username, githubToken);
+    setUser(sessionUser);
 
-    try {
-      const userData = await getUser();
-      
-      // Validate that the provided username matches the token's owner
-      if (userData.login.toLowerCase() !== username.toLowerCase()) {
-        throw new Error('Token does not match the provided username');
-      }
+    const repo = await getSetting('selectedRepo');
+    setSelectedRepoState(repo || null);
 
-      const userInfo = {
-        login: userData.login,
-        name: userData.name || userData.login,
-        avatarUrl: userData.avatar_url,
-      };
-      storeUser(userInfo);
-      setUser(userInfo);
-      return userInfo;
-    } catch (err) {
-      clearToken();
-      setToken(null);
-      throw err;
-    }
+    return sessionUser;
   }, []);
 
-  const logout = useCallback(() => {
-    clearToken();
-    setToken(null);
+  const logout = useCallback(async () => {
+    try {
+      await logoutSession();
+    } catch {
+      // Ignore backend logout failures and still clear local state.
+    }
+
     setUser(null);
     setSelectedRepoState(null);
   }, []);
@@ -72,10 +81,9 @@ export function AuthProvider({ children }) {
 
   const value = {
     user,
-    token,
     selectedRepo,
     loading,
-    isAuthenticated: !!token && !!user,
+    isAuthenticated: !!user,
     login,
     logout,
     selectRepo,

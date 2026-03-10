@@ -136,8 +136,30 @@
   padding: 0 var(--space-sm);
 }
 
+.message-meta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.message-model-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .message-bubble.user .message-timestamp {
   text-align: right;
+}
+
+.message-bubble.user .message-meta-row {
+  justify-content: flex-end;
 }
 
 @media (max-width: 768px) {

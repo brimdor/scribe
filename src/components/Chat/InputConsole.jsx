@@ -6,6 +6,17 @@ import { getSchemaTemplate } from '../../schemas';
 import { useSettings } from '../../context/SettingsContext';
 import './InputConsole.css';
 
+function normalizeModelMeta(config) {
+  const provider = config?.provider === 'oauth' ? 'oauth' : 'manual';
+  const requestedModel = (config?.model || '').trim() || (provider === 'oauth' ? 'auto' : 'gpt-4');
+  return {
+    provider,
+    requestedModel,
+    usedModel: '',
+    fallbackReason: '',
+  };
+}
+
 export default function InputConsole({ threadId, activeSchema, onThreadCreated }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -61,6 +72,8 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
     setText('');
 
     let currentThreadId = threadId;
+    const currentConfig = getOpenAIConfig();
+    const requestedModelMeta = normalizeModelMeta(currentConfig);
 
     try {
       // Create thread if needed
@@ -84,6 +97,7 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
         role: 'user',
         content,
         timestamp: Date.now(),
+        modelMeta: requestedModelMeta,
       };
       await addMessage(userMsg);
       window.dispatchEvent(new CustomEvent('scribe:new-message', { detail: { threadId: currentThreadId } }));
@@ -97,7 +111,6 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
 
       // Check if OpenAI is available
       if (!getOpenAIClient()) {
-        const currentConfig = getOpenAIConfig();
         const message = currentConfig?.provider === 'oauth'
           ? '⚠️ **OpenAI sign-in is not active.** Reconnect OpenAI in Settings or switch back to the manual provider mode.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas'
           : '⚠️ **Agent settings incomplete.** Add an OpenAI-compatible base URL in Settings to enable AI-powered note generation.\n\nIf your provider does not require an API key, you can leave that field blank and Scribe will use the fallback value `1234`.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas';
@@ -109,6 +122,10 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
           role: 'assistant',
           content: message,
           timestamp: Date.now(),
+          modelMeta: {
+            ...requestedModelMeta,
+            usedModel: requestedModelMeta.requestedModel,
+          },
         };
         await addMessage(aiMsg);
         window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));
@@ -122,16 +139,40 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
       }
 
       // Stream AI response
-      window.dispatchEvent(new CustomEvent('scribe:stream-start', {}));
+      window.dispatchEvent(new CustomEvent('scribe:stream-start', {
+        detail: {
+          threadId: currentThreadId,
+          modelMeta: requestedModelMeta,
+        },
+      }));
       abortRef.current = new AbortController();
+      let responseModelMeta = {
+        ...requestedModelMeta,
+        usedModel: requestedModelMeta.requestedModel,
+      };
 
       const fullText = await streamChat(
         chatMessages,
         schemaTemplate,
         (chunk, fullText) => {
-          window.dispatchEvent(new CustomEvent('scribe:stream-chunk', { detail: { chunk, fullText } }));
+          window.dispatchEvent(new CustomEvent('scribe:stream-chunk', { detail: { threadId: currentThreadId, chunk, fullText } }));
         },
-        abortRef.current.signal
+        abortRef.current.signal,
+        (nextMeta) => {
+          responseModelMeta = {
+            ...responseModelMeta,
+            ...nextMeta,
+            requestedModel: nextMeta?.requestedModel || responseModelMeta.requestedModel,
+            usedModel: nextMeta?.usedModel || responseModelMeta.usedModel,
+            fallbackReason: nextMeta?.fallbackReason || responseModelMeta.fallbackReason || '',
+          };
+          window.dispatchEvent(new CustomEvent('scribe:stream-meta', {
+            detail: {
+              threadId: currentThreadId,
+              modelMeta: responseModelMeta,
+            },
+          }));
+        },
       );
 
       // Save AI response
@@ -141,6 +182,10 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
         role: 'assistant',
         content: fullText,
         timestamp: Date.now(),
+        modelMeta: {
+          ...responseModelMeta,
+          usedModel: responseModelMeta.usedModel || responseModelMeta.requestedModel,
+        },
       };
       await addMessage(aiMsg);
       window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));
@@ -167,6 +212,11 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
           role: 'assistant',
           content: `❌ **Error:** ${err.message || 'Something went wrong. Please try again.'}`,
           timestamp: Date.now(),
+          modelMeta: {
+            ...requestedModelMeta,
+            usedModel: requestedModelMeta.requestedModel,
+            fallbackReason: '',
+          },
         };
         await addMessage(errorMsg);
         window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));

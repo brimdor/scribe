@@ -1,24 +1,86 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const stores = {
-  settings: new Map(),
-  threads: new Map(),
-};
+const settingsStore = new Map();
+const threadStore = new Map();
 
-vi.mock('idb', () => ({
-  openDB: vi.fn(async () => ({
-    objectStoreNames: { contains: () => true },
-    get: async (storeName, key) => stores[storeName].get(key),
-    put: async (storeName, value) => {
-      const key = value.key ?? value.id;
-      stores[storeName].set(key, value);
+function jsonResponse(status, payload) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (headerName) => (headerName.toLowerCase() === 'content-type' ? 'application/json' : ''),
     },
-  })),
-}));
+    json: async () => payload,
+  };
+}
 
-describe('storage settings helpers', () => {
+function emptyResponse(status) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: () => '',
+    },
+    json: async () => {
+      throw new Error('No JSON body');
+    },
+  };
+}
+
+function parseUrl(url) {
+  return new URL(url, 'http://localhost');
+}
+
+function createFetchMock() {
+  return vi.fn(async (url, options = {}) => {
+    const parsed = parseUrl(url);
+    const method = (options.method || 'GET').toUpperCase();
+    const path = parsed.pathname;
+    const body = options.body ? JSON.parse(options.body) : {};
+
+    if (path.startsWith('/api/storage/settings/')) {
+      const key = decodeURIComponent(path.replace('/api/storage/settings/', ''));
+      if (method === 'GET') {
+        return jsonResponse(200, { value: settingsStore.has(key) ? settingsStore.get(key) : null });
+      }
+      if (method === 'PUT') {
+        settingsStore.set(key, body.value ?? null);
+        return emptyResponse(204);
+      }
+    }
+
+    if (path === '/api/storage/threads' && method === 'POST') {
+      threadStore.set(body.id, body);
+      return jsonResponse(201, { thread: body });
+    }
+
+    if (path.startsWith('/api/storage/threads/') && method === 'PATCH') {
+      const threadId = decodeURIComponent(path.replace('/api/storage/threads/', ''));
+      const existing = threadStore.get(threadId);
+      if (!existing) {
+        return jsonResponse(404, { error: 'Thread not found.' });
+      }
+
+      const updated = {
+        ...existing,
+        ...body,
+        updatedAt: Date.now(),
+      };
+      threadStore.set(threadId, updated);
+      return jsonResponse(200, { thread: updated });
+    }
+
+    throw new Error(`Unhandled fetch request: ${method} ${path}`);
+  });
+}
+
+describe('storage service', () => {
   beforeEach(() => {
-    Object.values(stores).forEach((store) => store.clear());
+    settingsStore.clear();
+    threadStore.clear();
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('fetch', createFetchMock());
   });
 
   it('saves and loads normalized app settings', async () => {
@@ -45,7 +107,7 @@ describe('storage settings helpers', () => {
     });
   });
 
-  it('persists normalized oauth session and callback pending flow values', async () => {
+  it('persists normalized oauth session and pending flow values', async () => {
     const {
       getOpenAIOAuthPendingFlow,
       getOpenAIOAuthSession,
@@ -84,35 +146,6 @@ describe('storage settings helpers', () => {
       type: 'callback',
       codeVerifier: 'verifier',
       state: 'state',
-      startedAt: 67890,
-      returnPath: '/settings',
-    });
-  });
-
-  it('persists normalized device pending flow values', async () => {
-    const {
-      getOpenAIOAuthPendingFlow,
-      saveOpenAIOAuthPendingFlow,
-    } = await import('../storage');
-
-    await saveOpenAIOAuthPendingFlow({
-      type: 'device',
-      deviceAuthId: ' device-auth-123 ',
-      userCode: ' CODE-1234 ',
-      verificationUrl: ' https://auth.openai.com/codex/device ',
-      intervalMs: 7000,
-      expiresAt: 99999,
-      startedAt: 67890,
-      returnPath: ' /settings ',
-    });
-
-    await expect(getOpenAIOAuthPendingFlow()).resolves.toEqual({
-      type: 'device',
-      deviceAuthId: 'device-auth-123',
-      userCode: 'CODE-1234',
-      verificationUrl: 'https://auth.openai.com/codex/device',
-      intervalMs: 7000,
-      expiresAt: 99999,
       startedAt: 67890,
       returnPath: '/settings',
     });

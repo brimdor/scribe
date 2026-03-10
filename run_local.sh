@@ -8,5 +8,5 @@ echo "Starting Scribe local development server..."
 echo "Press Ctrl+C to stop."
 echo ""
 
-# Run the Vite dev server with network exposure to easily test on other devices if needed
-npm run dev -- --host
+# Run API + Vite dev servers together
+npm run dev

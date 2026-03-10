@@ -1,34 +1,19 @@
-/**
- * GitHub OAuth service using personal access token approach
- * (GitHub Device Flow requires CORS which doesn't work from SPAs directly,
- *  so we use a PAT-based auth for simplicity — user enters their token)
- */
+import { apiRequest } from './api';
 
-const TOKEN_KEY = 'scribe_github_token';
-const USER_KEY = 'scribe_github_user';
+export async function loginWithGitHub(username, token) {
+  const response = await apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: { username, token },
+  });
 
-export function getStoredToken() {
-  return sessionStorage.getItem(TOKEN_KEY);
+  return response.user;
 }
 
-export function storeToken(token) {
-  sessionStorage.setItem(TOKEN_KEY, token);
+export async function getCurrentSession() {
+  const response = await apiRequest('/api/auth/session');
+  return response.user;
 }
 
-export function clearToken() {
-  sessionStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(USER_KEY);
-}
-
-export function getStoredUser() {
-  const data = sessionStorage.getItem(USER_KEY);
-  return data ? JSON.parse(data) : null;
-}
-
-export function storeUser(user) {
-  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-}
-
-export function isAuthenticated() {
-  return !!getStoredToken();
+export async function logoutSession() {
+  await apiRequest('/api/auth/logout', { method: 'POST' });
 }
