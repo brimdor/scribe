@@ -103,6 +103,24 @@ function extractAccountId(payload) {
     || extractAccountIdFromClaims(parseJwtClaims(payload.access_token));
 }
 
+function extractEmailFromPayload(payload) {
+  if (payload.email) {
+    return payload.email.trim();
+  }
+
+  const idClaims = parseJwtClaims(payload.id_token);
+  if (idClaims?.email) {
+    return idClaims.email.trim();
+  }
+
+  const accessClaims = parseJwtClaims(payload.access_token);
+  if (accessClaims?.email) {
+    return accessClaims.email.trim();
+  }
+
+  return '';
+}
+
 async function readErrorMessage(response) {
   const text = await response.text();
 
@@ -121,7 +139,7 @@ function normalizeSession(payload, currentStatus = 'connected') {
     refreshToken: payload.refresh_token?.trim() || '',
     expiresAt: Date.now() + ((payload.expires_in || 0) * 1000),
     accountId: extractAccountId(payload),
-    email: payload.email?.trim() || '',
+    email: extractEmailFromPayload(payload),
     lastError: '',
   };
 }
@@ -259,11 +277,17 @@ async function parseEventStream(body, onChunk) {
 }
 
 export async function fetchOpenAIModels({ session, signal } = {}) {
-  const response = await fetch('https://api.openai.com/v1/models', {
+  const headers = {
+    Authorization: `Bearer ${session.accessToken}`,
+  };
+
+  if (session.accountId) {
+    headers['ChatGPT-Account-Id'] = session.accountId;
+  }
+
+  const response = await fetch('https://chatgpt.com/backend-api/models?history_and_training_disabled=false', {
     method: 'GET',
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-    },
+    headers,
     signal,
   });
 
@@ -272,12 +296,15 @@ export async function fetchOpenAIModels({ session, signal } = {}) {
   }
 
   const payload = await response.json();
-  if (!Array.isArray(payload.data)) {
+
+  // ChatGPT backend-api/models returns { models: [{ slug, title, ... }] }
+  const models = payload.models || payload.data || [];
+  if (!Array.isArray(models)) {
     return [];
   }
 
-  return payload.data
-    .map((model) => model.id)
+  return models
+    .map((model) => model.slug || model.id || '')
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
 }
@@ -438,7 +465,7 @@ export async function refreshOpenAIOAuthSession(session) {
     ...normalizeSession(payload),
     refreshToken: payload.refresh_token?.trim() || session.refreshToken,
     accountId: extractAccountId(payload) || session.accountId || '',
-    email: payload.email?.trim() || session.email || '',
+    email: extractEmailFromPayload(payload) || session.email || '',
   };
 }
 
