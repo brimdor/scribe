@@ -1,0 +1,156 @@
+openapi: 3.1.0
+info:
+  title: Scribe GitHub Sync API
+  version: 1.0.0
+paths:
+  /api/github/sync:
+    post:
+      summary: Sync assigned GitHub repository into user-scoped local folder
+      description: Clones or pulls the configured repository for the authenticated user.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string
+                repo:
+                  type: string
+                reason:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: Repository sync completed or skipped
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - sync
+                properties:
+                  sync:
+                    type: object
+                    required:
+                      - status
+                      - owner
+                      - repo
+                      - username
+                      - localPath
+                      - reason
+                    properties:
+                      status:
+                        type: string
+                        enum: [cloned, pulled, skipped]
+                      owner:
+                        type: string
+                      repo:
+                        type: string
+                      username:
+                        type: string
+                      localPath:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+        '400':
+          description: Missing or invalid repository assignment
+        '401':
+          description: Authentication required
+        '500':
+          description: Sync failed
+  /api/github/repo/tree:
+    get:
+      summary: List files and directories in the local synced repository
+      parameters:
+        - in: query
+          name: dir
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Repository tree loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tree]
+                properties:
+                  tree:
+                    type: object
+                    required: [entries, localPath]
+                    properties:
+                      localPath:
+                        type: string
+                      dir:
+                        type: string
+                      truncated:
+                        type: boolean
+                      entries:
+                        type: array
+                        items:
+                          type: object
+                          required: [type, path, name]
+                          properties:
+                            type:
+                              type: string
+                              enum: [dir, file, other]
+                            path:
+                              type: string
+                            name:
+                              type: string
+        '400':
+          description: Invalid directory path or missing assignment
+        '404':
+          description: Local checkout missing
+  /api/github/repo/file:
+    get:
+      summary: Read text file content from local synced repository
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: maxBytes
+          schema:
+            type: integer
+        - in: query
+          name: maxLines
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Repository file content loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file]
+                properties:
+                  file:
+                    type: object
+                    required: [path, content, truncated]
+                    properties:
+                      path:
+                        type: string
+                      content:
+                        type: string
+                      truncated:
+                        type: boolean
+                      totalBytes:
+                        type: integer
+                      totalLines:
+                        type: integer
+        '400':
+          description: Invalid path, binary file, or missing assignment
+        '404':
+          description: File not found in local checkout
