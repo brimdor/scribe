@@ -76,7 +76,7 @@ export default function LoginPage() {
           <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">
             GitHub Settings → Tokens
           </a>
-          {' '}with <strong>repo</strong> scope. Configure your AI agent after sign-in from <strong>Settings</strong>.
+          {' '}with <strong>repo</strong> scope. After GitHub sign-in, configure your AI provider from <strong>Settings</strong> - including the new OpenAI sign-in flow if you want to avoid pasting an OpenAI API key.
         </p>
 
         <div className="login-features">

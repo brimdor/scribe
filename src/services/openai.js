@@ -1,32 +1,68 @@
 import OpenAI from 'openai';
 import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
+import {
+  getValidOpenAIOAuthSession,
+  isOpenAIOAuthSessionActive,
+  quickOpenAIOAuthChat,
+  streamOpenAIOAuthChat,
+} from './openai-oauth';
 
 let client = null;
 let clientConfig = null;
 
+function dispatchOAuthSessionUpdate(session) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('scribe:openai-oauth-session', {
+    detail: { session },
+  }));
+}
+
 export function resolveOpenAIConfig(config = {}) {
   if (typeof config === 'string') {
     return {
+      provider: 'manual',
       apiKey: config.trim() || '1234',
       baseURL: undefined,
       model: OPENAI_MODEL,
+      openaiOAuthSession: null,
     };
   }
 
+  const provider = config.openaiConnectionMethod === 'oauth' && isOpenAIOAuthSessionActive(config.openaiOAuthSession)
+    ? 'oauth'
+    : 'manual';
+
   return {
-    apiKey: config.apiKey?.trim() || '1234',
-    baseURL: config.baseURL?.trim()?.replace(/\/+$/, '') || undefined,
-    model: config.model?.trim() || OPENAI_MODEL,
+    provider,
+    apiKey: config.apiKey?.trim() || config.agentApiKey?.trim() || '1234',
+    baseURL: config.baseURL?.trim()?.replace(/\/+$/, '') || config.agentBaseUrl?.trim()?.replace(/\/+$/, '') || undefined,
+    model: config.model?.trim() || config.agentModel?.trim() || OPENAI_MODEL,
+    openaiOAuthSession: config.openaiOAuthSession || null,
   };
 }
 
 export function initOpenAI(config) {
   clientConfig = resolveOpenAIConfig(config);
+
+  if (clientConfig.provider === 'oauth') {
+    client = { provider: 'oauth' };
+    return client;
+  }
+
+  if (!clientConfig.baseURL) {
+    client = null;
+    return null;
+  }
+
   client = new OpenAI({
     apiKey: clientConfig.apiKey,
     baseURL: clientConfig.baseURL,
     dangerouslyAllowBrowser: true,
   });
+
   return client;
 }
 
@@ -36,6 +72,29 @@ export function getOpenAIClient() {
 
 export function getOpenAIConfig() {
   return clientConfig;
+}
+
+async function getOAuthSession() {
+  if (!clientConfig?.openaiOAuthSession) {
+    throw new Error('OpenAI sign-in is not connected. Connect OpenAI in Settings.');
+  }
+
+  const refreshedSession = await getValidOpenAIOAuthSession(clientConfig.openaiOAuthSession, {
+    onRefresh: (session) => {
+      clientConfig = {
+        ...clientConfig,
+        openaiOAuthSession: session,
+      };
+      dispatchOAuthSessionUpdate(session);
+    },
+  });
+
+  clientConfig = {
+    ...clientConfig,
+    openaiOAuthSession: refreshedSession,
+  };
+
+  return refreshedSession;
 }
 
 export function normalizeGeneratedTitle(title) {
@@ -55,16 +114,26 @@ export function getFallbackTitle(userMessage, maxLength = 50) {
   return `${normalizedMessage.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-/**
- * Send a chat completion request with streaming
- * @param {Array} messages - Array of { role, content } messages
- * @param {string} schemaContext - Optional schema template to include as context
- * @param {function} onChunk - Callback for each streamed text chunk
- * @param {AbortSignal} signal - Optional abort signal
- * @returns {Promise<string>} Full response text
- */
 export async function streamChat(messages, schemaContext = null, onChunk, signal = null) {
-  if (!client) throw new Error('OpenAI client not initialized. Please configure your agent settings.');
+  if (!clientConfig) {
+    throw new Error('OpenAI client not initialized. Please configure your agent settings.');
+  }
+
+  if (clientConfig.provider === 'oauth') {
+    const session = await getOAuthSession();
+    return streamOpenAIOAuthChat({
+      session,
+      model: clientConfig.model,
+      messages,
+      schemaContext,
+      signal,
+      onChunk,
+    });
+  }
+
+  if (!client) {
+    throw new Error('OpenAI client not initialized. Please configure your agent settings.');
+  }
 
   const systemMessages = [
     { role: 'system', content: NOTE_SYSTEM_PROMPT },
@@ -83,6 +152,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     stream: true,
     temperature: 0.7,
     max_tokens: 4096,
+    store: false,
   }, { signal });
 
   let fullText = '';
@@ -97,11 +167,23 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
   return fullText;
 }
 
-/**
- * Non-streaming chat for short operations (title generation, etc.)
- */
 export async function quickChat(prompt) {
-  if (!client) return null;
+  if (!clientConfig) {
+    return null;
+  }
+
+  if (clientConfig.provider === 'oauth') {
+    const session = await getOAuthSession();
+    return quickOpenAIOAuthChat({
+      session,
+      prompt,
+      model: clientConfig.model,
+    });
+  }
+
+  if (!client) {
+    return null;
+  }
 
   const response = await client.chat.completions.create({
     model: clientConfig?.model || OPENAI_MODEL,
@@ -111,14 +193,12 @@ export async function quickChat(prompt) {
     ],
     temperature: 0.5,
     max_tokens: 100,
+    store: false,
   });
 
   return response.choices[0]?.message?.content?.trim() || '';
 }
 
-/**
- * Generate a conversation title from the first user message
- */
 export async function generateTitle(userMessage) {
   return normalizeGeneratedTitle(await quickChat(
     `Generate a short, descriptive title (3-6 words, no quotes) for a conversation that starts with: "${userMessage.slice(0, 200)}"`

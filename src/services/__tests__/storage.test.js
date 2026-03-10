@@ -28,6 +28,7 @@ describe('storage settings helpers', () => {
       environmentName: ' Local ',
       githubOwner: ' brimdor ',
       githubRepo: ' vault ',
+      openaiConnectionMethod: ' oauth ',
       agentBaseUrl: 'http://localhost:11434/v1/',
       agentApiKey: ' ',
       agentModel: ' llama3 ',
@@ -37,9 +38,83 @@ describe('storage settings helpers', () => {
       environmentName: 'Local',
       githubOwner: 'brimdor',
       githubRepo: 'vault',
+      openaiConnectionMethod: 'oauth',
       agentBaseUrl: 'http://localhost:11434/v1',
       agentApiKey: '',
       agentModel: 'llama3',
+    });
+  });
+
+  it('persists normalized oauth session and callback pending flow values', async () => {
+    const {
+      getOpenAIOAuthPendingFlow,
+      getOpenAIOAuthSession,
+      saveOpenAIOAuthPendingFlow,
+      saveOpenAIOAuthSession,
+    } = await import('../storage');
+
+    await saveOpenAIOAuthSession({
+      status: 'connected',
+      accessToken: ' access ',
+      refreshToken: ' refresh ',
+      expiresAt: 12345,
+      accountId: ' account ',
+      email: ' person@example.com ',
+      lastError: ' ',
+    });
+
+    await saveOpenAIOAuthPendingFlow({
+      codeVerifier: ' verifier ',
+      state: ' state ',
+      startedAt: 67890,
+      returnPath: ' /settings ',
+    });
+
+    await expect(getOpenAIOAuthSession()).resolves.toEqual({
+      status: 'connected',
+      accessToken: 'access',
+      refreshToken: 'refresh',
+      expiresAt: 12345,
+      accountId: 'account',
+      email: 'person@example.com',
+      lastError: '',
+    });
+
+    await expect(getOpenAIOAuthPendingFlow()).resolves.toEqual({
+      type: 'callback',
+      codeVerifier: 'verifier',
+      state: 'state',
+      startedAt: 67890,
+      returnPath: '/settings',
+    });
+  });
+
+  it('persists normalized device pending flow values', async () => {
+    const {
+      getOpenAIOAuthPendingFlow,
+      saveOpenAIOAuthPendingFlow,
+    } = await import('../storage');
+
+    await saveOpenAIOAuthPendingFlow({
+      type: 'device',
+      deviceAuthId: ' device-auth-123 ',
+      userCode: ' CODE-1234 ',
+      verificationUrl: ' https://auth.openai.com/codex/device ',
+      intervalMs: 7000,
+      expiresAt: 99999,
+      startedAt: 67890,
+      returnPath: ' /settings ',
+    });
+
+    await expect(getOpenAIOAuthPendingFlow()).resolves.toEqual({
+      type: 'device',
+      deviceAuthId: 'device-auth-123',
+      userCode: 'CODE-1234',
+      verificationUrl: 'https://auth.openai.com/codex/device',
+      intervalMs: 7000,
+      expiresAt: 99999,
+      startedAt: 67890,
+      returnPath: '/settings',
     });
   });
 

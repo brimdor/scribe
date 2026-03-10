@@ -66,7 +66,7 @@
 }
 
 .settings-section-agent {
-  border-color: rgba(99, 102, 241, 0.25);
+  border-color: rgba(14, 165, 140, 0.28);
 }
 
 .settings-section-heading {
@@ -121,6 +121,88 @@
   text-align: right;
 }
 
+.settings-oauth-card {
+  gap: var(--space-md);
+}
+
+.settings-oauth-row {
+  align-items: center;
+}
+
+.settings-oauth-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-oauth-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 108px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-oauth-badge.success {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--accent-success);
+}
+
+.settings-oauth-badge.error {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--accent-error);
+}
+
+.settings-oauth-badge.info {
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--accent-primary);
+}
+
+.settings-oauth-device-flow {
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.settings-oauth-device-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-oauth-device-header a {
+  color: var(--accent-primary);
+}
+
+.settings-oauth-device-code {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+}
+
+.settings-oauth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
 .settings-helper-text {
   font-size: 0.8125rem;
   color: var(--text-secondary);
@@ -142,6 +224,11 @@
   color: var(--accent-error);
 }
 
+.settings-status.info {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-primary);
+}
+
 .settings-panel-actions {
   display: flex;
   justify-content: flex-end;
@@ -156,8 +243,18 @@
   }
 
   .settings-card-row,
-  .settings-panel-actions {
+  .settings-panel-actions,
+  .settings-oauth-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .settings-oauth-badge {
+    width: 100%;
+  }
+
+  .settings-oauth-device-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
