@@ -152,6 +152,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     stream: true,
     temperature: 0.7,
     max_tokens: 4096,
+    store: false,
   }, { signal });
 
   let fullText = '';
@@ -192,6 +193,7 @@ export async function quickChat(prompt) {
     ],
     temperature: 0.5,
     max_tokens: 100,
+    store: false,
   });
 
   return response.choices[0]?.message?.content?.trim() || '';
