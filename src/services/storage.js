@@ -3,6 +3,15 @@ import { DB_NAME, DB_VERSION } from '../utils/constants';
 
 let dbPromise = null;
 
+export const DEFAULT_APP_SETTINGS = {
+  environmentName: '',
+  githubOwner: '',
+  githubRepo: '',
+  agentBaseUrl: '',
+  agentApiKey: '',
+  agentModel: '',
+};
+
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
@@ -125,6 +134,32 @@ export async function getSetting(key) {
 export async function setSetting(key, value) {
   const db = await getDB();
   await db.put('settings', { key, value });
+}
+
+export function normalizeAppSettings(settings = {}) {
+  return {
+    ...DEFAULT_APP_SETTINGS,
+    ...Object.fromEntries(
+      Object.entries(settings).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value ?? ''])
+    ),
+    agentBaseUrl: typeof settings.agentBaseUrl === 'string'
+      ? settings.agentBaseUrl.trim().replace(/\/+$/, '')
+      : '',
+  };
+}
+
+export async function getAppSettings() {
+  const keys = Object.keys(DEFAULT_APP_SETTINGS);
+  const entries = await Promise.all(keys.map(async (key) => [key, await getSetting(key)]));
+  return normalizeAppSettings(Object.fromEntries(entries));
+}
+
+export async function saveAppSettings(settings) {
+  const normalized = normalizeAppSettings(settings);
+  await Promise.all(
+    Object.entries(normalized).map(([key, value]) => setSetting(key, value))
+  );
+  return normalized;
 }
 
 // ──── Schema Operations ────

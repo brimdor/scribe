@@ -130,12 +130,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
-  font-size: 0.8125rem;
-  color: var(--text-tertiary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition-fast);
+   width: 100%;
+   padding: var(--space-xs) var(--space-sm);
+   font-size: 0.8125rem;
+   color: var(--text-tertiary);
+   border-radius: var(--radius-sm);
+   cursor: pointer;
+   transition: all var(--transition-fast);
+   text-align: left;
 }
 
 .sidebar-footer-link:hover {

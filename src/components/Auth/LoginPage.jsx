@@ -5,7 +5,6 @@ import './LoginPage.css';
 export default function LoginPage() {
   const { login } = useAuth();
   const [token, setToken] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,10 +20,6 @@ export default function LoginPage() {
 
     try {
       await login(token.trim());
-      // Store OpenAI key if provided
-      if (openaiKey.trim()) {
-        sessionStorage.setItem('scribe_openai_key', openaiKey.trim());
-      }
     } catch (err) {
       setError('Invalid token. Please check your GitHub Personal Access Token.');
     } finally {
@@ -56,18 +51,6 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="login-input-group">
-            <label htmlFor="openai-key">OpenAI API Key (optional)</label>
-            <input
-              id="openai-key"
-              type="password"
-              value={openaiKey}
-              onChange={(e) => setOpenaiKey(e.target.value)}
-              placeholder="sk-xxxxxxxxxxxx"
-              autoComplete="off"
-            />
-          </div>
-
           {error && <div className="login-error">{error}</div>}
 
           <button
@@ -93,7 +76,7 @@ export default function LoginPage() {
           <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">
             GitHub Settings → Tokens
           </a>
-          {' '}with <strong>repo</strong> scope.
+          {' '}with <strong>repo</strong> scope. Configure your AI agent after sign-in from <strong>Settings</strong>.
         </p>
 
         <div className="login-features">

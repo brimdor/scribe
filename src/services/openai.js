@@ -1,11 +1,30 @@
 import OpenAI from 'openai';
-import { NOTE_SYSTEM_PROMPT } from '../utils/constants';
+import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
 
 let client = null;
+let clientConfig = null;
 
-export function initOpenAI(apiKey) {
+export function resolveOpenAIConfig(config = {}) {
+  if (typeof config === 'string') {
+    return {
+      apiKey: config.trim() || '1234',
+      baseURL: undefined,
+      model: OPENAI_MODEL,
+    };
+  }
+
+  return {
+    apiKey: config.apiKey?.trim() || '1234',
+    baseURL: config.baseURL?.trim()?.replace(/\/+$/, '') || undefined,
+    model: config.model?.trim() || OPENAI_MODEL,
+  };
+}
+
+export function initOpenAI(config) {
+  clientConfig = resolveOpenAIConfig(config);
   client = new OpenAI({
-    apiKey,
+    apiKey: clientConfig.apiKey,
+    baseURL: clientConfig.baseURL,
     dangerouslyAllowBrowser: true,
   });
   return client;
@@ -13,6 +32,10 @@ export function initOpenAI(apiKey) {
 
 export function getOpenAIClient() {
   return client;
+}
+
+export function getOpenAIConfig() {
+  return clientConfig;
 }
 
 /**
@@ -24,7 +47,7 @@ export function getOpenAIClient() {
  * @returns {Promise<string>} Full response text
  */
 export async function streamChat(messages, schemaContext = null, onChunk, signal = null) {
-  if (!client) throw new Error('OpenAI client not initialized. Please set your API key in settings.');
+  if (!client) throw new Error('OpenAI client not initialized. Please configure your agent settings.');
 
   const systemMessages = [
     { role: 'system', content: NOTE_SYSTEM_PROMPT },
@@ -38,7 +61,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
   }
 
   const stream = await client.chat.completions.create({
-    model: 'gpt-4',
+    model: clientConfig?.model || OPENAI_MODEL,
     messages: [...systemMessages, ...messages],
     stream: true,
     temperature: 0.7,
@@ -64,7 +87,7 @@ export async function quickChat(prompt) {
   if (!client) return null;
 
   const response = await client.chat.completions.create({
-    model: 'gpt-4',
+    model: clientConfig?.model || OPENAI_MODEL,
     messages: [
       { role: 'system', content: 'You are a helpful assistant. Respond concisely.' },
       { role: 'user', content: prompt },
