@@ -161,6 +161,11 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: var(--font-sans);
   font-weight: 400;
@@ -318,6 +323,15 @@ button:disabled {
   transition: all var(--transition-fast);
 }
 
+@media (max-width: 768px) {
+  .btn-icon {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .btn-icon:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -390,7 +404,7 @@ textarea {
 .animate-fade-in { animation: fadeIn var(--transition-base) ease-out; }
 .animate-fade-in-up { animation: fadeInUp var(--transition-base) ease-out; }
 
-/* ---------- Utilities ---------- */
+/* ---------- Utilities for Responsive UI ---------- */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -409,10 +423,41 @@ textarea {
   white-space: nowrap;
 }
 
+/* Base minimum touch target sizing */
+button, input, select {
+  min-height: 44px;
+}
+
+/* Global utility classes for displaying based on breakpoint */
+.hidden-mobile { display: flex; }
+.hidden-desktop { display: none; }
+
 /* ---------- Media Queries ---------- */
+
+/* Tablet (Medium screens) */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-width: 240px;
+  }
+}
+
+/* Mobile (Small screens) */
 @media (max-width: 768px) {
   :root {
     --sidebar-width: 100vw;
-    --topbar-height: 48px;
+    --topbar-height: 56px; /* A bit larger for touch target space on top bars */
+  }
+
+  .hidden-mobile {
+    display: none !important;
+  }
+  
+  .hidden-desktop {
+    display: flex !important;
+  }
+
+  /* Full width container utilities */
+  .w-full-mobile {
+    width: 100% !important;
   }
 }

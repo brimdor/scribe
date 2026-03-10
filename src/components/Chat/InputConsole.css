@@ -118,6 +118,16 @@
   }
 
   .input-console {
-    padding: var(--space-sm) var(--space-md);
+    padding: var(--space-sm) 0;
+  }
+
+  .send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .input-action-btn {
+    width: 44px;
+    height: 44px;
   }
 }
