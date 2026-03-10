@@ -81,6 +81,26 @@ describe('openai service', () => {
     expect(streamOpenAIOAuthChat).toHaveBeenCalled();
   });
 
+  it('does not force a manual default model in oauth mode', async () => {
+    const { initOpenAI, getOpenAIConfig } = await import('../openai');
+    const oauthSession = {
+      status: 'connected',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: Date.now() + 60_000,
+    };
+
+    initOpenAI({
+      openaiConnectionMethod: 'oauth',
+      openaiOAuthSession: oauthSession,
+    });
+
+    expect(getOpenAIConfig()).toEqual(expect.objectContaining({
+      provider: 'oauth',
+      model: '',
+    }));
+  });
+
   it('normalizes generated titles and falls back to truncated prompts', async () => {
     const { normalizeGeneratedTitle, getFallbackTitle } = await import('../openai');
 

@@ -1,198 +1,54 @@
-import { Octokit } from '@octokit/rest';
+import { apiRequest } from './api';
 
-let octokit = null;
-
-export function initGitHub(token) {
-  octokit = new Octokit({ auth: token });
-  return octokit;
+export function initGitHub() {
+  return null;
 }
 
 export function getOctokit() {
-  return octokit;
+  return null;
 }
 
-/**
- * Get the authenticated user's profile
- */
 export async function getUser() {
-  const { data } = await octokit.rest.users.getAuthenticated();
-  return data;
+  const response = await apiRequest('/api/github/user');
+  return response.user;
 }
 
-/**
- * List user's repositories
- */
 export async function listRepos() {
-  const repos = [];
-  let page = 1;
-  while (true) {
-    const { data } = await octokit.rest.repos.listForAuthenticatedUser({
-      per_page: 100,
-      page,
-      sort: 'updated',
-      affiliation: 'owner',
-    });
-    repos.push(...data);
-    if (data.length < 100) break;
-    page++;
-  }
-  return repos;
-}
-
-/**
- * List the user's organizations
- */
-export async function getOrgs() {
-  const { data } = await octokit.rest.orgs.listForAuthenticatedUser();
-  return data;
-}
-
-/**
- * List repositories for a specific owner (user or organization)
- */
-export async function getRepos(owner) {
-  const repos = [];
-  let page = 1;
   const user = await getUser();
-
-  while (true) {
-    let response;
-    if (owner === user.login) {
-      response = await octokit.rest.repos.listForAuthenticatedUser({
-        per_page: 100,
-        page,
-        sort: 'updated',
-        affiliation: 'owner',
-      });
-    } else {
-      try {
-        response = await octokit.rest.repos.listForOrg({
-          org: owner,
-          per_page: 100,
-          page,
-          sort: 'updated',
-          type: 'all',
-        });
-      } catch (err) {
-        if (err.status === 404) {
-          response = await octokit.rest.repos.listForUser({
-            username: owner,
-            per_page: 100,
-            page,
-            sort: 'updated',
-          });
-        } else {
-          throw err;
-        }
-      }
-    }
-    
-    repos.push(...response.data);
-    if (response.data.length < 100) break;
-    page++;
-  }
-  return repos;
+  return getRepos(user.login);
 }
 
-/**
- * Create a new repository
- */
-export async function createRepo(name, description = 'My Scribe notes vault', isPrivate = true) {
-  const { data } = await octokit.rest.repos.createForAuthenticatedUser({
-    name,
-    description,
-    private: isPrivate,
-    auto_init: true,
-  });
-  return data;
+export async function getOrgs() {
+  const response = await apiRequest('/api/github/orgs');
+  return response.orgs;
 }
 
-/**
- * Get repository contents (file tree)
- */
-export async function getContents(owner, repo, path = '') {
-  try {
-    const { data } = await octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path,
-    });
-    return Array.isArray(data) ? data : [data];
-  } catch (err) {
-    if (err.status === 404) return [];
-    throw err;
-  }
+export async function getRepos(owner) {
+  const params = new URLSearchParams({ owner });
+  const response = await apiRequest(`/api/github/repos?${params.toString()}`);
+  return response.repos;
 }
 
-/**
- * Get file contents
- */
-export async function getFileContent(owner, repo, path) {
-  const { data } = await octokit.rest.repos.getContent({
-    owner,
-    repo,
-    path,
-  });
-  if (data.type !== 'file') throw new Error('Path is not a file');
-  return {
-    content: atob(data.content),
-    sha: data.sha,
-    path: data.path,
-    name: data.name,
-  };
+export async function createRepo() {
+  throw new Error('Repository mutation endpoints are not implemented in this version.');
 }
 
-/**
- * Create or update a file in the repository
- */
-export async function saveFile(owner, repo, path, content, message, sha = null) {
-  const params = {
-    owner,
-    repo,
-    path,
-    message,
-    content: btoa(unescape(encodeURIComponent(content))),
-  };
-  if (sha) params.sha = sha;
-
-  const { data } = await octokit.rest.repos.createOrUpdateFileContents(params);
-  return data;
+export async function getContents() {
+  throw new Error('GitHub content endpoints are not implemented in this version.');
 }
 
-/**
- * Delete a file from the repository
- */
-export async function deleteFile(owner, repo, path, sha, message = 'Delete note') {
-  const { data } = await octokit.rest.repos.deleteFile({
-    owner,
-    repo,
-    path,
-    message,
-    sha,
-  });
-  return data;
+export async function getFileContent() {
+  throw new Error('GitHub file endpoints are not implemented in this version.');
 }
 
-/**
- * Get repository tree recursively
- */
-export async function getTree(owner, repo) {
-  try {
-    const { data: ref } = await octokit.rest.git.getRef({
-      owner,
-      repo,
-      ref: 'heads/main',
-    });
-    
-    const { data: tree } = await octokit.rest.git.getTree({
-      owner,
-      repo,
-      tree_sha: ref.object.sha,
-      recursive: 'true',
-    });
-    
-    return tree.tree.filter(item => item.path.endsWith('.md'));
-  } catch {
-    return [];
-  }
+export async function saveFile() {
+  throw new Error('GitHub file endpoints are not implemented in this version.');
+}
+
+export async function deleteFile() {
+  throw new Error('GitHub file endpoints are not implemented in this version.');
+}
+
+export async function getTree() {
+  throw new Error('GitHub tree endpoints are not implemented in this version.');
 }

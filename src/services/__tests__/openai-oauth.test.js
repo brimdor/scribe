@@ -159,4 +159,88 @@ describe('openai oauth service', () => {
       refreshToken: 'refresh-token',
     }));
   });
+
+  it('omits unsupported agent-mode model when using codex responses', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        output_text: 'ok',
+      }),
+    }));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { quickOpenAIOAuthChat } = await import('../openai-oauth');
+    const result = await quickOpenAIOAuthChat({
+      session: {
+        accessToken: 'access-token',
+        accountId: '',
+      },
+      prompt: 'hello',
+      model: 'agent-mode',
+    });
+
+    expect(result).toBe('ok');
+    const request = fetchMock.mock.calls[0];
+    const payload = JSON.parse(request[1].body);
+    expect(payload.model).toBeUndefined();
+  });
+
+  it('filters unsupported models from the oauth model list', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        models: [
+          { slug: 'gpt-5' },
+          { slug: 'agent-mode' },
+          { slug: 'None' },
+          { id: 'o4-mini' },
+        ],
+      }),
+    })));
+
+    const { fetchOpenAIModels } = await import('../openai-oauth');
+    const models = await fetchOpenAIModels({
+      session: {
+        accessToken: 'access-token',
+        accountId: '',
+      },
+    });
+
+    expect(models).toEqual(['gpt-5', 'o4-mini']);
+  });
+
+  it('falls back to gpt-5 when codex rejects a None/default model', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => JSON.stringify({ detail: "The 'None' model is not supported when using Codex with a ChatGPT account." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ output_text: 'fallback works' }),
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { quickOpenAIOAuthChat } = await import('../openai-oauth');
+    const output = await quickOpenAIOAuthChat({
+      session: {
+        accessToken: 'access-token',
+        accountId: '',
+      },
+      prompt: 'hello',
+      model: 'None',
+    });
+
+    expect(output).toBe('fallback works');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const firstPayload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const secondPayload = JSON.parse(fetchMock.mock.calls[1][1].body);
+
+    expect(firstPayload.model).toBeUndefined();
+    expect(secondPayload.model).toBe('gpt-5');
+  });
 });

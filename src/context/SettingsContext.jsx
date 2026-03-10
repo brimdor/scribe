@@ -17,10 +17,12 @@ import {
   isOpenAIOAuthCallback,
   pollOpenAIDeviceFlow,
 } from '../services/openai-oauth';
+import { useAuth } from './AuthContext';
 
 const SettingsContext = createContext(null);
 
 export function SettingsProvider({ children }) {
+  const { isAuthenticated } = useAuth();
   const [settings, setSettings] = useState(DEFAULT_APP_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -40,6 +42,19 @@ export function SettingsProvider({ children }) {
 
   useEffect(() => {
     let mounted = true;
+
+    if (!isAuthenticated) {
+      setSettings(DEFAULT_APP_SETTINGS);
+      setOpenAIOAuthSession(null);
+      setOpenAIOAuthPendingFlow(null);
+      setOpenAIOAuthMessage('');
+      setLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setLoading(true);
 
     Promise.all([
       getAppSettings(),
@@ -64,7 +79,7 @@ export function SettingsProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const handleSessionUpdate = async (event) => {

@@ -1,4 +1,4 @@
-import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
+import { NOTE_SYSTEM_PROMPT } from '../utils/constants';
 
 export const OPENAI_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 export const OPENAI_OAUTH_AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize';
@@ -13,6 +13,9 @@ const OPENAI_OAUTH_SCOPES = 'openid profile email offline_access';
 const OPENAI_OAUTH_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const OPENAI_OAUTH_PENDING_TTL_MS = 10 * 60 * 1000;
 const OPENAI_OAUTH_DEVICE_TTL_MS = 15 * 60 * 1000;
+const OPENAI_OAUTH_FALLBACK_MODEL = 'gpt-5';
+const UNSUPPORTED_CODEX_MODELS = new Set(['agent-mode', 'none']);
+const UNSUPPORTED_MODEL_ERROR_PATTERN = /not supported when using codex with a chatgpt account/i;
 
 function getCrypto() {
   if (!globalThis.crypto?.subtle) {
@@ -126,10 +129,73 @@ async function readErrorMessage(response) {
 
   try {
     const parsed = JSON.parse(text);
-    return parsed.error?.message || parsed.error_description || parsed.message || text;
+    return parsed.error?.message || parsed.error_description || parsed.message || parsed.detail || text;
   } catch {
     return text || `Request failed with status ${response.status}`;
   }
+}
+
+function shouldRetryWithoutModel(message) {
+  return UNSUPPORTED_MODEL_ERROR_PATTERN.test(String(message || ''));
+}
+
+function normalizeRequestedModel(model) {
+  const normalizedModel = typeof model === 'string' ? model.trim() : '';
+  if (!normalizedModel) {
+    return '';
+  }
+
+  return UNSUPPORTED_CODEX_MODELS.has(normalizedModel.toLowerCase()) ? '' : normalizedModel;
+}
+
+function buildCodexRequestBody({ model, messages, schemaContext, stream }) {
+  const payload = {
+    instructions: buildInstructions(schemaContext),
+    input: toResponsesInput(messages),
+    stream,
+    store: false,
+  };
+
+  const normalizedModel = normalizeRequestedModel(model);
+  if (normalizedModel) {
+    payload.model = normalizedModel;
+  }
+
+  return payload;
+}
+
+async function requestCodexResponse({ session, model, messages, schemaContext, signal, stream }) {
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: stream ? 'text/event-stream' : 'application/json',
+    Authorization: `Bearer ${session.accessToken}`,
+    originator: 'scribe',
+  };
+
+  if (session.accountId) {
+    headers['ChatGPT-Account-Id'] = session.accountId;
+  }
+
+  const response = await fetch(OPENAI_CODEX_RESPONSES_URL, {
+    method: 'POST',
+    headers,
+    signal,
+    body: JSON.stringify(buildCodexRequestBody({ model, messages, schemaContext, stream })),
+  });
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response);
+    return {
+      ok: false,
+      message,
+      shouldRetry: shouldRetryWithoutModel(message),
+    };
+  }
+
+  return {
+    ok: true,
+    response,
+  };
 }
 
 function normalizeSession(payload, currentStatus = 'connected') {
@@ -186,6 +252,17 @@ function extractOutputText(payload) {
   return chunks.join('').trim();
 }
 
+function extractResponseModel(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+
+  return payload.model
+    || payload.response?.model
+    || payload.metadata?.model
+    || '';
+}
+
 function extractDelta(payload) {
   if (!payload || typeof payload !== 'object') {
     return '';
@@ -204,13 +281,17 @@ function extractDelta(payload) {
 
 async function parseEventStream(body, onChunk) {
   if (!body) {
-    return '';
+    return {
+      text: '',
+      model: '',
+    };
   }
 
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let fullText = '';
+  let responseModel = '';
 
   const processBlock = (block) => {
     const lines = block
@@ -235,12 +316,21 @@ async function parseEventStream(body, onChunk) {
     }
 
     const delta = extractDelta(parsed);
+    const parsedModel = extractResponseModel(parsed);
+    if (parsedModel) {
+      responseModel = parsedModel;
+    }
+
     if (delta) {
       fullText += delta;
       onChunk?.(delta, fullText);
     }
 
     if (!delta && parsed.type === 'response.completed' && !fullText) {
+      const completedModel = extractResponseModel(parsed.response || parsed);
+      if (completedModel) {
+        responseModel = completedModel;
+      }
       fullText = extractOutputText(parsed.response || parsed);
       if (fullText) {
         onChunk?.(fullText, fullText);
@@ -259,7 +349,10 @@ async function parseEventStream(body, onChunk) {
       const block = buffer.slice(0, boundaryIndex);
       buffer = buffer.slice(boundaryIndex + 2);
       if (processBlock(block)) {
-        return fullText;
+        return {
+          text: fullText,
+          model: responseModel,
+        };
       }
       boundaryIndex = buffer.indexOf('\n\n');
     }
@@ -273,7 +366,10 @@ async function parseEventStream(body, onChunk) {
     processBlock(buffer.trim());
   }
 
-  return fullText;
+  return {
+    text: fullText,
+    model: responseModel,
+  };
 }
 
 export async function fetchOpenAIModels({ session, signal } = {}) {
@@ -306,44 +402,83 @@ export async function fetchOpenAIModels({ session, signal } = {}) {
   return models
     .map((model) => model.slug || model.id || '')
     .filter(Boolean)
+    .filter((model) => !UNSUPPORTED_CODEX_MODELS.has(model.toLowerCase()))
     .sort((a, b) => a.localeCompare(b));
 }
 
 async function createCodexResponse({ session, model, messages, schemaContext, signal, stream = true, onChunk }) {
-  const headers = {
-    'Content-Type': 'application/json',
-    Accept: stream ? 'text/event-stream' : 'application/json',
-    Authorization: `Bearer ${session.accessToken}`,
-    originator: 'scribe',
-  };
+  const initialModel = normalizeRequestedModel(model);
 
-  if (session.accountId) {
-    headers['ChatGPT-Account-Id'] = session.accountId;
-  }
-
-  const response = await fetch(OPENAI_CODEX_RESPONSES_URL, {
-    method: 'POST',
-    headers,
+  const firstAttempt = await requestCodexResponse({
+    session,
+    model: initialModel,
+    messages,
+    schemaContext,
     signal,
-    body: JSON.stringify({
-      model: model || OPENAI_MODEL,
-      instructions: buildInstructions(schemaContext),
-      input: toResponsesInput(messages),
-      stream,
-      store: false,
-    }),
+    stream,
   });
 
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+  let response = null;
+  let selectedModelForSuccess = initialModel;
+  let fallbackReason = '';
+
+  if (firstAttempt.ok) {
+    response = firstAttempt.response;
+    selectedModelForSuccess = initialModel;
+  } else if (firstAttempt.shouldRetry) {
+    const retryModels = initialModel
+      ? ['', OPENAI_OAUTH_FALLBACK_MODEL]
+      : [OPENAI_OAUTH_FALLBACK_MODEL];
+
+    let successfulRetry = null;
+    let lastFailure = firstAttempt;
+
+    for (const retryModel of retryModels) {
+      const retryAttempt = await requestCodexResponse({
+        session,
+        model: retryModel,
+        messages,
+        schemaContext,
+        signal,
+        stream,
+      });
+
+      if (retryAttempt.ok) {
+        successfulRetry = retryAttempt;
+        selectedModelForSuccess = normalizeRequestedModel(retryModel);
+        break;
+      }
+
+      lastFailure = retryAttempt;
+    }
+
+    if (!successfulRetry) {
+      throw new Error(lastFailure.message);
+    }
+
+    response = successfulRetry.response;
+    fallbackReason = firstAttempt.message;
+  } else {
+    throw new Error(firstAttempt.message);
   }
 
   if (!stream) {
     const payload = await response.json();
-    return extractOutputText(payload);
+    return {
+      text: extractOutputText(payload),
+      model: extractResponseModel(payload) || selectedModelForSuccess || OPENAI_OAUTH_FALLBACK_MODEL,
+      requestedModel: initialModel || 'auto',
+      fallbackReason,
+    };
   }
 
-  return parseEventStream(response.body, onChunk);
+  const streamResult = await parseEventStream(response.body, onChunk);
+  return {
+    text: streamResult.text,
+    model: streamResult.model || selectedModelForSuccess || OPENAI_OAUTH_FALLBACK_MODEL,
+    requestedModel: initialModel || 'auto',
+    fallbackReason,
+  };
 }
 
 export function isOpenAIOAuthCallback(search = globalThis.location?.search) {
@@ -556,8 +691,8 @@ export async function getValidOpenAIOAuthSession(session, options = {}) {
   return refreshed;
 }
 
-export async function streamOpenAIOAuthChat({ session, model, messages, schemaContext, signal, onChunk }) {
-  return createCodexResponse({
+export async function streamOpenAIOAuthChat({ session, model, messages, schemaContext, signal, onChunk, onModel }) {
+  const response = await createCodexResponse({
     session,
     model,
     messages,
@@ -566,14 +701,25 @@ export async function streamOpenAIOAuthChat({ session, model, messages, schemaCo
     stream: true,
     onChunk,
   });
+
+  onModel?.({
+    provider: 'oauth',
+    requestedModel: response.requestedModel,
+    usedModel: response.model,
+    fallbackReason: response.fallbackReason || '',
+  });
+
+  return response.text;
 }
 
 export async function quickOpenAIOAuthChat({ session, prompt, model }) {
-  return createCodexResponse({
+  const response = await createCodexResponse({
     session,
     model,
     messages: [{ role: 'user', content: prompt }],
     schemaContext: null,
     stream: false,
   });
+
+  return response.text;
 }

@@ -1,7 +1,4 @@
-import { openDB } from 'idb';
-import { DB_NAME, DB_VERSION } from '../utils/constants';
-
-let dbPromise = null;
+import { ApiError, apiRequest } from './api';
 
 export const DEFAULT_APP_SETTINGS = {
   environmentName: '',
@@ -16,133 +13,120 @@ export const DEFAULT_APP_SETTINGS = {
 const OPENAI_OAUTH_SESSION_KEY = 'openaiOAuthSession';
 const OPENAI_OAUTH_PENDING_FLOW_KEY = 'openaiOAuthPendingFlow';
 
-function getDB() {
-  if (!dbPromise) {
-    dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        // Threads store
-        if (!db.objectStoreNames.contains('threads')) {
-          const threadStore = db.createObjectStore('threads', { keyPath: 'id' });
-          threadStore.createIndex('createdAt', 'createdAt');
-          threadStore.createIndex('updatedAt', 'updatedAt');
-          threadStore.createIndex('isPinned', 'isPinned');
-        }
-
-        // Messages store
-        if (!db.objectStoreNames.contains('messages')) {
-          const messageStore = db.createObjectStore('messages', { keyPath: 'id' });
-          messageStore.createIndex('threadId', 'threadId');
-          messageStore.createIndex('timestamp', 'timestamp');
-        }
-
-        // Custom schemas store
-        if (!db.objectStoreNames.contains('schemas')) {
-          const schemaStore = db.createObjectStore('schemas', { keyPath: 'id' });
-          schemaStore.createIndex('name', 'name', { unique: true });
-        }
-
-        // Settings store
-        if (!db.objectStoreNames.contains('settings')) {
-          db.createObjectStore('settings', { keyPath: 'key' });
-        }
-      },
-    });
-  }
-  return dbPromise;
+function isAuthError(error) {
+  return error instanceof ApiError && error.status === 401;
 }
 
-// ──── Thread Operations ────
+async function requestValueOrNull(request) {
+  try {
+    return await request();
+  } catch (error) {
+    if (isAuthError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
 
 export async function getAllThreads() {
-  const db = await getDB();
-  const threads = await db.getAll('threads');
-  return threads.sort((a, b) => {
-    // Pinned first, then by updatedAt descending
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
-    return b.updatedAt - a.updatedAt;
-  });
+  const response = await apiRequest('/api/storage/threads');
+  return response.threads;
 }
 
 export async function getThread(id) {
-  const db = await getDB();
-  return db.get('threads', id);
+  try {
+    const response = await apiRequest(`/api/storage/threads/${encodeURIComponent(id)}`);
+    return response.thread;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function createThread(thread) {
-  const db = await getDB();
-  await db.put('threads', thread);
-  return thread;
+  const response = await apiRequest('/api/storage/threads', {
+    method: 'POST',
+    body: thread,
+  });
+  return response.thread;
 }
 
 export async function updateThread(id, updates) {
-  const db = await getDB();
-  const thread = await db.get('threads', id);
-  if (!thread) return null;
-  const updated = { ...thread, ...updates, updatedAt: Date.now() };
-  await db.put('threads', updated);
-  return updated;
+  try {
+    const response = await apiRequest(`/api/storage/threads/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: updates,
+    });
+    return response.thread;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function deleteThread(id) {
-  const db = await getDB();
-  // Delete all messages in this thread
-  const messages = await getMessagesByThread(id);
-  const tx = db.transaction(['threads', 'messages'], 'readwrite');
-  for (const msg of messages) {
-    await tx.objectStore('messages').delete(msg.id);
-  }
-  await tx.objectStore('threads').delete(id);
-  await tx.done;
+  await apiRequest(`/api/storage/threads/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
-// ──── Message Operations ────
-
 export async function getMessagesByThread(threadId) {
-  const db = await getDB();
-  const index = db.transaction('messages').store.index('threadId');
-  const messages = await index.getAll(threadId);
-  return messages.sort((a, b) => a.timestamp - b.timestamp);
+  const response = await apiRequest(`/api/storage/threads/${encodeURIComponent(threadId)}/messages`);
+  return response.messages;
 }
 
 export async function addMessage(message) {
-  const db = await getDB();
-  await db.put('messages', message);
-  // Update thread's updatedAt
-  await updateThread(message.threadId, {});
-  return message;
+  const response = await apiRequest('/api/storage/messages', {
+    method: 'POST',
+    body: message,
+  });
+  return response.message;
 }
 
 export async function updateMessage(id, updates) {
-  const db = await getDB();
-  const msg = await db.get('messages', id);
-  if (!msg) return null;
-  const updated = { ...msg, ...updates };
-  await db.put('messages', updated);
-  return updated;
+  try {
+    const response = await apiRequest(`/api/storage/messages/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: updates,
+    });
+    return response.message;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function deleteMessage(id) {
-  const db = await getDB();
-  await db.delete('messages', id);
+  await apiRequest(`/api/storage/messages/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
-// ──── Settings Operations ────
-
 export async function getSetting(key) {
-  const db = await getDB();
-  const setting = await db.get('settings', key);
-  return setting?.value ?? null;
+  const value = await requestValueOrNull(async () => {
+    const response = await apiRequest(`/api/storage/settings/${encodeURIComponent(key)}`);
+    return response.value;
+  });
+
+  return value;
 }
 
 export async function setSetting(key, value) {
-  const db = await getDB();
-  await db.put('settings', { key, value });
+  await apiRequest(`/api/storage/settings/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: { value },
+  });
 }
 
 export function normalizeAppSettings(settings = {}) {
   const normalizedEntries = Object.fromEntries(
-    Object.entries(settings).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value ?? ''])
+    Object.entries(settings).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value ?? '']),
   );
 
   return {
@@ -161,7 +145,13 @@ export function normalizeOpenAIOAuthSession(session = null) {
   }
 
   const normalized = {
-    status: session.status === 'error' ? 'error' : session.status === 'connecting' ? 'connecting' : session.status === 'connected' ? 'connected' : 'disconnected',
+    status: session.status === 'error'
+      ? 'error'
+      : session.status === 'connecting'
+        ? 'connecting'
+        : session.status === 'connected'
+          ? 'connected'
+          : 'disconnected',
     accessToken: typeof session.accessToken === 'string' ? session.accessToken.trim() : '',
     refreshToken: typeof session.refreshToken === 'string' ? session.refreshToken.trim() : '',
     expiresAt: Number.isFinite(session.expiresAt) ? Number(session.expiresAt) : 0,
@@ -189,7 +179,9 @@ export function normalizeOpenAIOAuthPendingFlow(flow = null) {
       returnPath: typeof flow.returnPath === 'string' && flow.returnPath.trim() ? flow.returnPath.trim() : '/',
       deviceAuthId: typeof flow.deviceAuthId === 'string' ? flow.deviceAuthId.trim() : '',
       userCode: typeof flow.userCode === 'string' ? flow.userCode.trim() : '',
-      verificationUrl: typeof flow.verificationUrl === 'string' && flow.verificationUrl.trim() ? flow.verificationUrl.trim() : 'https://auth.openai.com/codex/device',
+      verificationUrl: typeof flow.verificationUrl === 'string' && flow.verificationUrl.trim()
+        ? flow.verificationUrl.trim()
+        : 'https://auth.openai.com/codex/device',
       intervalMs: Number.isFinite(flow.intervalMs) && Number(flow.intervalMs) > 0 ? Number(flow.intervalMs) : 5000,
       expiresAt: Number.isFinite(flow.expiresAt) ? Number(flow.expiresAt) : 0,
     };
@@ -225,13 +217,14 @@ export async function getAppSettings() {
 export async function saveAppSettings(settings) {
   const normalized = normalizeAppSettings(settings);
   await Promise.all(
-    Object.entries(normalized).map(([key, value]) => setSetting(key, value))
+    Object.entries(normalized).map(([key, value]) => setSetting(key, value)),
   );
   return normalized;
 }
 
 export async function getOpenAIOAuthSession() {
-  return normalizeOpenAIOAuthSession(await getSetting(OPENAI_OAUTH_SESSION_KEY));
+  const session = await getSetting(OPENAI_OAUTH_SESSION_KEY);
+  return normalizeOpenAIOAuthSession(session);
 }
 
 export async function saveOpenAIOAuthSession(session) {
@@ -250,7 +243,8 @@ export async function clearOpenAIOAuthSession() {
 }
 
 export async function getOpenAIOAuthPendingFlow() {
-  return normalizeOpenAIOAuthPendingFlow(await getSetting(OPENAI_OAUTH_PENDING_FLOW_KEY));
+  const pendingFlow = await getSetting(OPENAI_OAUTH_PENDING_FLOW_KEY);
+  return normalizeOpenAIOAuthPendingFlow(pendingFlow);
 }
 
 export async function saveOpenAIOAuthPendingFlow(flow) {
@@ -268,15 +262,15 @@ export async function clearOpenAIOAuthPendingFlow() {
   await setSetting(OPENAI_OAUTH_PENDING_FLOW_KEY, null);
 }
 
-// ──── Schema Operations ────
-
 export async function getCustomSchemas() {
-  const db = await getDB();
-  return db.getAll('schemas');
+  const response = await requestValueOrNull(async () => apiRequest('/api/storage/schemas'));
+  return response?.schemas || [];
 }
 
 export async function saveSchema(schema) {
-  const db = await getDB();
-  await db.put('schemas', schema);
-  return schema;
+  const response = await apiRequest(`/api/storage/schemas/${encodeURIComponent(schema.id)}`, {
+    method: 'PUT',
+    body: schema,
+  });
+  return response.schema;
 }

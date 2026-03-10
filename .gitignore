@@ -29,3 +29,7 @@ coverage/
 
 # Misc
 *.tmp
+
+# Runtime data
+server/data/*.db
+server/data/*.db-*

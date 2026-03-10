@@ -22,9 +22,15 @@ export default function LoginPage() {
     try {
       await login(username.trim(), token.trim());
     } catch (err) {
-      setError(err.message === 'Token does not match the provided username' 
-        ? err.message 
-        : 'Invalid credentials. Please check your username and Personal Access Token.');
+      const message = err?.message || '';
+      if (
+        message === 'Token does not match the provided username'
+        || message.includes('requires read/write repo capability')
+      ) {
+        setError(message);
+      } else {
+        setError('Invalid credentials. Please check your username and Personal Access Token.');
+      }
     } finally {
       setLoading(false);
     }

@@ -1,0 +1,242 @@
+openapi: 3.1.0
+info:
+  title: Scribe Storage and Auth API
+  version: 1.0.0
+servers:
+  - url: /api
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate with GitHub username and PAT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, token]
+              properties:
+                username:
+                  type: string
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Login success
+        '401':
+          description: Invalid credentials or username mismatch
+        '403':
+          description: PAT lacks repo read/write capability
+  /auth/session:
+    get:
+      summary: Get current authenticated user session
+      responses:
+        '200':
+          description: Active session
+        '401':
+          description: No active session
+  /auth/logout:
+    post:
+      summary: End current session
+      responses:
+        '204':
+          description: Logged out
+
+  /github/orgs:
+    get:
+      summary: List authenticated user organizations
+      responses:
+        '200':
+          description: Organization list
+  /github/repos:
+    get:
+      summary: List repositories for owner
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Repository list
+
+  /storage/settings/{key}:
+    get:
+      summary: Read a user setting by key
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Setting value
+    put:
+      summary: Upsert a user setting by key
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: {}
+      responses:
+        '204':
+          description: Setting saved
+
+  /storage/threads:
+    get:
+      summary: List user threads
+      responses:
+        '200':
+          description: Thread list
+    post:
+      summary: Create or replace thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Thread persisted
+
+  /storage/threads/{threadId}:
+    get:
+      summary: Get a specific thread
+      parameters:
+        - in: path
+          name: threadId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Thread found
+        '404':
+          description: Thread not found
+    patch:
+      summary: Update thread fields
+      parameters:
+        - in: path
+          name: threadId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated thread
+        '404':
+          description: Thread not found
+    delete:
+      summary: Delete thread and related messages
+      parameters:
+        - in: path
+          name: threadId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /storage/threads/{threadId}/messages:
+    get:
+      summary: List messages for a thread
+      parameters:
+        - in: path
+          name: threadId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Message list
+
+  /storage/messages:
+    post:
+      summary: Create or replace message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Message persisted
+
+  /storage/messages/{messageId}:
+    patch:
+      summary: Update message fields
+      parameters:
+        - in: path
+          name: messageId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated message
+        '404':
+          description: Message not found
+    delete:
+      summary: Delete message
+      parameters:
+        - in: path
+          name: messageId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /storage/schemas:
+    get:
+      summary: List user custom schemas
+      responses:
+        '200':
+          description: Schema list
+
+  /storage/schemas/{schemaId}:
+    put:
+      summary: Create or replace custom schema
+      parameters:
+        - in: path
+          name: schemaId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Schema persisted

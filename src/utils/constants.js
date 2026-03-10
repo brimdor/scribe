@@ -3,9 +3,6 @@
 export const APP_NAME = 'Scribe';
 export const APP_DESCRIPTION = 'AI-powered notetaking with GitHub storage';
 
-export const DB_NAME = 'scribe-db';
-export const DB_VERSION = 1;
-
 export const GITHUB_CLIENT_ID = ''; // User sets this in settings
 
 export const OPENAI_MODEL = 'gpt-4';

@@ -8,6 +8,35 @@ export default function MessageBubble({ message, isStreaming = false }) {
   const { user } = useAuth();
   const isUser = message.role === 'user';
 
+  const formatModelMeta = (modelMeta) => {
+    if (!modelMeta) {
+      return '';
+    }
+
+    const provider = modelMeta.provider === 'oauth' ? 'oauth' : 'manual';
+    const requestedModel = modelMeta.requestedModel || '';
+    const usedModel = modelMeta.usedModel || '';
+
+    if (!isUser && requestedModel && usedModel && requestedModel !== usedModel) {
+      return `${provider} • ${requestedModel} -> ${usedModel}`;
+    }
+
+    const model = isUser
+      ? (requestedModel || usedModel || '')
+      : (usedModel || requestedModel || '');
+
+    if (!model) {
+      return '';
+    }
+
+    return `${provider} • ${model}`;
+  };
+
+  const modelMetaLabel = formatModelMeta(message.modelMeta);
+  const modelMetaTitle = message.modelMeta?.fallbackReason
+    ? `Fallback applied: ${message.modelMeta.fallbackReason}`
+    : '';
+
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -40,8 +69,15 @@ export default function MessageBubble({ message, isStreaming = false }) {
           )}
         </div>
 
-        {message.timestamp && (
-          <div className="message-timestamp">{formatTime(message.timestamp)}</div>
+        {(message.timestamp || modelMetaLabel) && (
+          <div className="message-meta-row">
+            {message.timestamp && (
+              <div className="message-timestamp">{formatTime(message.timestamp)}</div>
+            )}
+            {modelMetaLabel && (
+              <div className="message-model-tag" title={modelMetaTitle || undefined}>{modelMetaLabel}</div>
+            )}
+          </div>
         )}
 
         {!isUser && !isStreaming && message.id && (

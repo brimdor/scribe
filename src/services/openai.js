@@ -35,11 +35,13 @@ export function resolveOpenAIConfig(config = {}) {
     ? 'oauth'
     : 'manual';
 
+  const resolvedModel = config.model?.trim() || config.agentModel?.trim() || '';
+
   return {
     provider,
     apiKey: config.apiKey?.trim() || config.agentApiKey?.trim() || '1234',
     baseURL: config.baseURL?.trim()?.replace(/\/+$/, '') || config.agentBaseUrl?.trim()?.replace(/\/+$/, '') || undefined,
-    model: config.model?.trim() || config.agentModel?.trim() || OPENAI_MODEL,
+    model: resolvedModel || (provider === 'manual' ? OPENAI_MODEL : ''),
     openaiOAuthSession: config.openaiOAuthSession || null,
   };
 }
@@ -72,6 +74,11 @@ export function getOpenAIClient() {
 
 export function getOpenAIConfig() {
   return clientConfig;
+}
+
+function normalizeModelLabel(value, fallback = 'auto') {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return normalized || fallback;
 }
 
 async function getOAuthSession() {
@@ -114,7 +121,7 @@ export function getFallbackTitle(userMessage, maxLength = 50) {
   return `${normalizedMessage.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-export async function streamChat(messages, schemaContext = null, onChunk, signal = null) {
+export async function streamChat(messages, schemaContext = null, onChunk, signal = null, onMeta = null) {
   if (!clientConfig) {
     throw new Error('OpenAI client not initialized. Please configure your agent settings.');
   }
@@ -128,6 +135,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
       schemaContext,
       signal,
       onChunk,
+      onModel: onMeta,
     });
   }
 
@@ -146,6 +154,15 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     });
   }
 
+  const requestedModel = normalizeModelLabel(clientConfig?.model || OPENAI_MODEL, OPENAI_MODEL);
+  let usedModel = requestedModel;
+  onMeta?.({
+    provider: 'manual',
+    requestedModel,
+    usedModel,
+    fallbackReason: '',
+  });
+
   const stream = await client.chat.completions.create({
     model: clientConfig?.model || OPENAI_MODEL,
     messages: [...systemMessages, ...messages],
@@ -157,6 +174,17 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
 
   let fullText = '';
   for await (const chunk of stream) {
+    const chunkModel = typeof chunk?.model === 'string' ? chunk.model.trim() : '';
+    if (chunkModel && chunkModel !== usedModel) {
+      usedModel = chunkModel;
+      onMeta?.({
+        provider: 'manual',
+        requestedModel,
+        usedModel,
+        fallbackReason: '',
+      });
+    }
+
     const delta = chunk.choices[0]?.delta?.content || '';
     if (delta) {
       fullText += delta;
