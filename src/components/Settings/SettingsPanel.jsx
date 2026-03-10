@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useTheme } from '../../context/ThemeContext';
-import { getOrgs, getRepos } from '../../services/github';
+import { getOrgs, getRepos, syncAssignedRepo } from '../../services/github';
 import './SettingsPanel.css';
 
 export default function SettingsPanel({ isOpen, onClose }) {
-  const { user, selectedRepo } = useAuth();
+  const { user } = useAuth();
   const {
     settings,
     saveSettings,
@@ -32,6 +32,8 @@ export default function SettingsPanel({ isOpen, onClose }) {
   const [repos, setRepos] = useState([]);
   const [fetchingOrgs, setFetchingOrgs] = useState(false);
   const [fetchingRepos, setFetchingRepos] = useState(false);
+  const [syncingRepo, setSyncingRepo] = useState(false);
+  const [repoSyncMeta, setRepoSyncMeta] = useState(null);
 
   useEffect(() => {
     setForm(settings);
@@ -107,6 +109,54 @@ export default function SettingsPanel({ isOpen, onClose }) {
     return null;
   }
 
+  const formatSyncStatus = (sync) => {
+    if (!sync) {
+      return 'Repository sync skipped.';
+    }
+
+    if (sync.status === 'skipped') {
+      return sync.message || 'Repository sync skipped.';
+    }
+
+    const action = sync.status === 'cloned' ? 'cloned' : 'updated';
+    const target = sync.localPath || `${sync.username}/${sync.repo}`;
+    return `Repository ${action}: ${target}`;
+  };
+
+  const getSyncBadge = (sync) => {
+    if (!sync) {
+      return { tone: 'info', label: 'Not synced yet' };
+    }
+
+    if (sync.status === 'error') {
+      return { tone: 'error', label: 'Sync failed' };
+    }
+
+    if (sync.status === 'cloned') {
+      return { tone: 'success', label: 'Cloned' };
+    }
+
+    if (sync.status === 'pulled') {
+      return { tone: 'success', label: 'Pulled' };
+    }
+
+    if (sync.status === 'skipped') {
+      if (sync.syncState === 'up-to-date') {
+        return { tone: 'info', label: 'Up to date' };
+      }
+
+      if (sync.syncState === 'local-changes') {
+        return { tone: 'info', label: 'Skipped: local changes' };
+      }
+
+      return { tone: 'info', label: 'Skipped' };
+    }
+
+    return { tone: 'info', label: 'Unknown' };
+  };
+
+  const syncBadge = getSyncBadge(repoSyncMeta);
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((current) => {
@@ -118,6 +168,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
     });
     setError('');
     setStatus('');
+    setRepoSyncMeta(null);
     clearOpenAIMessage();
   };
 
@@ -136,6 +187,38 @@ export default function SettingsPanel({ isOpen, onClose }) {
     setError('');
     setStatus('');
     await disconnectOpenAI();
+  };
+
+  const handleSyncNow = async () => {
+    if (!form.githubOwner?.trim() || !form.githubRepo?.trim()) {
+      setError('Select both owner and repository before syncing.');
+      setStatus('');
+      return;
+    }
+
+    setSyncingRepo(true);
+    setError('');
+    setStatus('Syncing repository...');
+
+    try {
+      const sync = await syncAssignedRepo({
+        owner: form.githubOwner,
+        repo: form.githubRepo,
+        reason: 'manual-sync',
+      });
+      setRepoSyncMeta(sync);
+      setStatus(formatSyncStatus(sync));
+    } catch (syncError) {
+      setRepoSyncMeta({
+        status: 'error',
+        syncState: 'error',
+        message: syncError.message || 'Repository sync failed.',
+      });
+      setError(syncError.message || 'Repository sync failed.');
+      setStatus('');
+    } finally {
+      setSyncingRepo(false);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -157,8 +240,33 @@ export default function SettingsPanel({ isOpen, onClose }) {
     setError('');
 
     try {
-      await saveSettings(form);
-      setStatus('Settings saved.');
+      const previousOwner = (settings.githubOwner || '').trim();
+      const previousRepo = (settings.githubRepo || '').trim();
+      const saved = await saveSettings(form);
+      const nextOwner = (saved.githubOwner || '').trim();
+      const nextRepo = (saved.githubRepo || '').trim();
+      const repoChanged = previousOwner !== nextOwner || previousRepo !== nextRepo;
+
+      if (repoChanged && nextOwner && nextRepo) {
+        try {
+          const sync = await syncAssignedRepo({
+            owner: nextOwner,
+            repo: nextRepo,
+            reason: 'settings-change',
+          });
+          setRepoSyncMeta(sync);
+          setStatus(`Settings saved. ${formatSyncStatus(sync)}`);
+        } catch (syncError) {
+          setRepoSyncMeta({
+            status: 'error',
+            syncState: 'error',
+            message: syncError.message || 'Unable to sync repository.',
+          });
+          setStatus(`Settings saved. Repository sync failed: ${syncError.message || 'Unable to sync repository.'}`);
+        }
+      } else {
+        setStatus('Settings saved.');
+      }
     } catch {
       setError('Unable to save settings right now.');
     } finally {
@@ -271,6 +379,23 @@ export default function SettingsPanel({ isOpen, onClose }) {
                 )}
               </select>
             </label>
+
+            <div className="settings-sync-actions">
+              <button
+                type="button"
+                className="btn-ghost settings-sync-button"
+                onClick={handleSyncNow}
+                disabled={saving || loading || syncingRepo || !form.githubOwner || !form.githubRepo}
+              >
+                {syncingRepo ? 'Syncing...' : 'Sync repository'}
+              </button>
+              <div className="settings-sync-meta">
+                <span className={`settings-oauth-badge settings-sync-badge ${syncBadge.tone}`}>{syncBadge.label}</span>
+                <span className="settings-helper-text">
+                  {repoSyncMeta?.message || 'Pull latest remote changes when safe; sync skips when local changes are detected.'}
+                </span>
+              </div>
+            </div>
           </section>
 
           <section className="settings-section settings-section-agent">

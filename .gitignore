@@ -33,3 +33,4 @@ coverage/
 # Runtime data
 server/data/*.db
 server/data/*.db-*
+server/repos/

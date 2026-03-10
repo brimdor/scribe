@@ -1,6 +1,6 @@
 # Project Constitution
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Ratified**: 2026-03-10
 **Last Amended**: 2026-03-10
 
@@ -37,6 +37,7 @@ Feature docs and architecture artifacts are first-class deliverables.
 - `server/src/services/user-store.js`: User/session persistence and PAT rotation handling (Added: 2026-03-10, Feature: 004)
 - `server/src/services/storage-store.js`: User-scoped settings/thread/message/schema storage via SQLite (Added: 2026-03-10, Feature: 004)
 - `server/src/services/github-auth.js`: GitHub PAT validation and repo-scope enforcement (Added: 2026-03-10, Feature: 004)
+- `server/src/services/github-repo-sync.js`: User-scoped clone/pull orchestration for configured GitHub repositories (Added: 2026-03-10, Feature: 006)
 
 ### API Endpoints
 - `POST /api/auth/login`: Authenticate username + PAT and start session (Added: 2026-03-10)
@@ -45,6 +46,7 @@ Feature docs and architecture artifacts are first-class deliverables.
 - `GET /api/storage/*`: Read user-scoped persisted data (Added: 2026-03-10)
 - `POST|PUT|PATCH|DELETE /api/storage/*`: Mutate user-scoped persisted data (Added: 2026-03-10)
 - `GET /api/github/orgs|repos|user`: Backend-proxied GitHub access using stored PAT (Added: 2026-03-10)
+- `POST /api/github/sync`: Clone/pull assigned repository into user-scoped local workspace (Added: 2026-03-10)
 
 ### Data Models
 - `users`: Authoritative user identity and encrypted credential/profile storage (Added: 2026-03-10)
@@ -55,6 +57,7 @@ Feature docs and architecture artifacts are first-class deliverables.
 
 - Unit/service tests required for storage normalization and middleware behavior.
 - Integration coverage required for security-critical middleware and auth/storage workflows.
+- Repository sync trigger behavior should be covered by service-level tests when assistant/tooling behavior changes.
 - Build and test commands must pass before completion.
 
 ## Governance

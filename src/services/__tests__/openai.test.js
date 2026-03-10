@@ -13,6 +13,11 @@ const getValidOpenAIOAuthSession = vi.fn(async (session) => session);
 const quickOpenAIOAuthChat = vi.fn(async () => 'OAuth title');
 const streamOpenAIOAuthChat = vi.fn(async () => 'OAuth response');
 const isOpenAIOAuthSessionActive = vi.fn((session) => !!session?.refreshToken && session?.status === 'connected');
+const buildRepoContextForPrompt = vi.fn(async () => null);
+const getLatestUserPrompt = vi.fn((messages) => {
+  const userMessage = [...messages].reverse().find((message) => message.role === 'user');
+  return userMessage?.content || '';
+});
 
 vi.mock('openai', () => ({
   default: openAIConstructor,
@@ -25,6 +30,11 @@ vi.mock('../openai-oauth', () => ({
   isOpenAIOAuthSessionActive,
 }));
 
+vi.mock('../github', () => ({
+  buildRepoContextForPrompt,
+  getLatestUserPrompt,
+}));
+
 describe('openai service', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -32,6 +42,8 @@ describe('openai service', () => {
     openAIConstructor.mockClear();
     quickOpenAIOAuthChat.mockClear();
     streamOpenAIOAuthChat.mockClear();
+    buildRepoContextForPrompt.mockClear();
+    getLatestUserPrompt.mockClear();
   });
 
   it('uses fallback api key when the provided key is blank', async () => {
@@ -77,6 +89,7 @@ describe('openai service', () => {
 
     await expect(quickChat('hello')).resolves.toBe('OAuth title');
     await expect(streamChat([{ role: 'user', content: 'hi' }], null, vi.fn(), null)).resolves.toBe('OAuth response');
+    expect(buildRepoContextForPrompt).toHaveBeenCalledWith('hi', { reason: 'assistant-tool' });
     expect(quickOpenAIOAuthChat).toHaveBeenCalled();
     expect(streamOpenAIOAuthChat).toHaveBeenCalled();
   });

@@ -208,6 +208,33 @@
   color: var(--text-secondary);
 }
 
+.settings-sync-actions {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.settings-sync-meta {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-sync-button {
+  justify-self: start;
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+}
+
+.settings-sync-badge {
+  min-width: 0;
+  width: fit-content;
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+.settings-sync-button:hover:not(:disabled) {
+  border-color: var(--border-focus);
+}
+
 .settings-status {
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
@@ -256,5 +283,10 @@
   .settings-oauth-device-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .settings-sync-button {
+    width: 100%;
+    justify-self: stretch;
   }
 }

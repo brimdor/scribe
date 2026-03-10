@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getConfig } from '../config/env.js';
 import { clearSessionCookie, getSessionIdFromRequest, setSessionCookie } from '../middleware/auth.js';
 import { AuthError, validateGitHubToken } from '../services/github-auth.js';
+import { syncAssignedRepoForUser } from '../services/github-repo-sync.js';
 import { createSession, deleteSession, resolveSession, upsertUserWithToken } from '../services/user-store.js';
 
 const router = Router();
@@ -20,12 +21,26 @@ router.post('/login', async (req, res) => {
     const persisted = upsertUserWithToken(githubIdentity);
     const { sessionTtlMs } = getConfig();
     const session = createSession(persisted.id, sessionTtlMs);
+    let loginSync = null;
+    let loginSyncError = '';
 
     setSessionCookie(req, res, session.id, sessionTtlMs);
+
+    try {
+      loginSync = await syncAssignedRepoForUser({
+        userId: persisted.id,
+        username: persisted.user.login,
+        reason: 'login',
+      });
+    } catch (syncError) {
+      loginSyncError = syncError?.message || 'Repository sync failed during login.';
+    }
 
     res.status(200).json({
       user: persisted.user,
       tokenUpdated: persisted.tokenUpdated,
+      sync: loginSync,
+      syncError: loginSyncError,
     });
   } catch (error) {
     if (error instanceof AuthError) {

@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
+import { buildRepoContextForPrompt, getLatestUserPrompt } from './github';
 import {
   getValidOpenAIOAuthSession,
   isOpenAIOAuthSessionActive,
@@ -126,12 +127,21 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     throw new Error('OpenAI client not initialized. Please configure your agent settings.');
   }
 
+  const latestPrompt = getLatestUserPrompt(messages);
+  const repoContext = await buildRepoContextForPrompt(latestPrompt, { reason: 'assistant-tool' });
+  const repoContextMessage = repoContext?.contextText
+    ? {
+      role: 'system',
+      content: `Use the following local repository context when it is relevant:\n\n${repoContext.contextText}`,
+    }
+    : null;
+
   if (clientConfig.provider === 'oauth') {
     const session = await getOAuthSession();
     return streamOpenAIOAuthChat({
       session,
       model: clientConfig.model,
-      messages,
+      messages: repoContextMessage ? [repoContextMessage, ...messages] : messages,
       schemaContext,
       signal,
       onChunk,
@@ -146,6 +156,10 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
   const systemMessages = [
     { role: 'system', content: NOTE_SYSTEM_PROMPT },
   ];
+
+  if (repoContextMessage) {
+    systemMessages.push(repoContextMessage);
+  }
 
   if (schemaContext) {
     systemMessages.push({
