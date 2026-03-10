@@ -46,6 +46,19 @@ export function ThemeProvider({ children }) {
     setSetting('theme', newTheme);
   }, [theme]);
 
+  const setTheme = useCallback((nextTheme) => {
+    if (nextTheme === 'system') {
+      setIsManual(false);
+      setThemeState(getSystemTheme());
+      setSetting('theme', null);
+      return;
+    }
+
+    setThemeState(nextTheme);
+    setIsManual(true);
+    setSetting('theme', nextTheme);
+  }, []);
+
   const resetToSystem = useCallback(() => {
     setIsManual(false);
     setThemeState(getSystemTheme());
@@ -53,7 +66,7 @@ export function ThemeProvider({ children }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, resetToSystem, isManual }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, resetToSystem, setTheme, isManual }}>
       {children}
     </ThemeContext.Provider>
   );

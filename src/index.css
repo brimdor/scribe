@@ -324,7 +324,7 @@ button:disabled {
 }
 
 /* ---------- Inputs ---------- */
-input, textarea {
+input, textarea, select {
   font-family: var(--font-sans);
   font-size: 1rem;
   color: var(--text-primary);
@@ -336,7 +336,7 @@ input, textarea {
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }

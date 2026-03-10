@@ -4,6 +4,7 @@ import { createThread, addMessage, getMessagesByThread, updateThread } from '../
 import { streamChat, generateTitle } from '../../services/openai';
 import { initOpenAI, getOpenAIClient } from '../../services/openai';
 import { getSchemaTemplate } from '../../schemas';
+import { useSettings } from '../../context/SettingsContext';
 import './InputConsole.css';
 
 export default function InputConsole({ threadId, activeSchema, onThreadCreated, refreshKey }) {
@@ -11,6 +12,7 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated, 
   const [sending, setSending] = useState(false);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
+  const { settings } = useSettings();
 
   // Auto-resize textarea
   useEffect(() => {
@@ -32,11 +34,16 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated, 
 
   // Init OpenAI if key exists
   useEffect(() => {
-    const key = sessionStorage.getItem('scribe_openai_key');
-    if (key && !getOpenAIClient()) {
-      initOpenAI(key);
+    if (!settings.agentBaseUrl) {
+      return;
     }
-  }, []);
+
+    initOpenAI({
+      apiKey: settings.agentApiKey,
+      baseURL: settings.agentBaseUrl,
+      model: settings.agentModel,
+    });
+  }, [settings.agentApiKey, settings.agentBaseUrl, settings.agentModel]);
 
   const sendMessage = useCallback(async () => {
     const content = text.trim();
@@ -87,7 +94,7 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated, 
           id: uuidv4(),
           threadId: currentThreadId,
           role: 'assistant',
-          content: '⚠️ **OpenAI API key not set.** Please add your API key in the login screen or settings to enable AI-powered note generation.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas',
+          content: '⚠️ **Agent settings incomplete.** Add an OpenAI-compatible base URL in Settings to enable AI-powered note generation.\n\nIf your provider does not require an API key, you can leave that field blank and Scribe will use the fallback value `1234`.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas',
           timestamp: Date.now(),
         };
         await addMessage(aiMsg);

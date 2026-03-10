@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getAllThreads, deleteThread, updateThread } from '../../services/storage';
 import './Sidebar.css';
 
-export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, refreshKey }) {
+export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, onOpenSettings, refreshKey }) {
   const [threads, setThreads] = useState([]);
 
   const loadThreads = useCallback(async () => {
@@ -84,9 +84,9 @@ export default function Sidebar({ activeThreadId, onSelectThread, onNewChat, ref
         <div className="sidebar-footer-link" onClick={() => window.open('https://github.com/brimdor/scribe', '_blank')}>
           ❓ Help & Docs
         </div>
-        <div className="sidebar-footer-link">
+        <button type="button" className="sidebar-footer-link" onClick={onOpenSettings}>
           ⚙️ Settings
-        </div>
+        </button>
       </div>
     </div>
   );

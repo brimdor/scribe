@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import Sidebar from '../Sidebar/Sidebar';
+import SettingsPanel from '../Settings/SettingsPanel';
 import TopBar from '../TopBar/TopBar';
 import ChatWindow from '../Chat/ChatWindow';
 import InputConsole from '../Chat/InputConsole';
+import { useSettings } from '../../context/SettingsContext';
 import './Layout.css';
 
 export default function Layout() {
@@ -10,6 +12,7 @@ export default function Layout() {
   const [activeThreadId, setActiveThreadId] = useState(null);
   const [activeSchema, setActiveSchema] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { isSettingsOpen, openSettings, closeSettings } = useSettings();
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen(prev => !prev);
@@ -53,6 +56,7 @@ export default function Layout() {
           activeThreadId={activeThreadId}
           onSelectThread={handleSelectThread}
           onNewChat={handleNewChat}
+          onOpenSettings={openSettings}
           refreshKey={refreshKey}
         />
       </aside>
@@ -64,6 +68,7 @@ export default function Layout() {
           onToggleSidebar={toggleSidebar}
           activeSchema={activeSchema}
           onSchemaSelect={handleSchemaSelect}
+          onOpenSettings={openSettings}
         />
         <ChatWindow
           key={refreshKey}
@@ -76,6 +81,7 @@ export default function Layout() {
           onThreadCreated={handleThreadCreated}
           refreshKey={refreshKey}
         />
+        <SettingsPanel isOpen={isSettingsOpen} onClose={closeSettings} />
       </main>
     </div>
   );

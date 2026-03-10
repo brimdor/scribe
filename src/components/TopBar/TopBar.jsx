@@ -4,7 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { builtInSchemas } from '../../schemas';
 import './TopBar.css';
 
-export default function TopBar({ sidebarOpen, onToggleSidebar, activeSchema, onSchemaSelect }) {
+export default function TopBar({ sidebarOpen, onToggleSidebar, activeSchema, onSchemaSelect, onOpenSettings }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [schemaOpen, setSchemaOpen] = useState(false);
@@ -110,7 +110,7 @@ export default function TopBar({ sidebarOpen, onToggleSidebar, activeSchema, onS
                 {user?.name || user?.login}
               </div>
               <div className="user-menu-divider" />
-              <button className="user-menu-item" onClick={() => { setMenuOpen(false); }}>
+              <button className="user-menu-item" onClick={() => { onOpenSettings(); setMenuOpen(false); }}>
                 ⚙️ Settings
               </button>
               <button className="user-menu-item user-menu-logout" onClick={() => { logout(); setMenuOpen(false); }}>
