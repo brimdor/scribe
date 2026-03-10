@@ -1,0 +1,123 @@
+.input-console {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-xl);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-secondary);
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.input-console-wrapper {
+  padding: var(--space-sm) var(--space-xl);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.input-field-container {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  gap: var(--space-sm);
+}
+
+.input-field-container:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.input-textarea {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: var(--space-xs) var(--space-sm);
+  min-height: 24px;
+  max-height: 200px;
+  line-height: 1.5;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  outline: none;
+  resize: none;
+  font-family: var(--font-sans);
+}
+
+.input-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.input-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: all var(--transition-fast);
+  font-size: 1rem;
+}
+
+.input-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--accent-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.send-btn:hover:not(:disabled) {
+  background: var(--accent-primary-hover);
+  transform: scale(1.05);
+}
+
+.send-btn:disabled {
+  opacity: 0.4;
+}
+
+.send-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.input-disclaimer {
+  text-align: center;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  padding: var(--space-xs) 0;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .input-console-wrapper {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .input-console {
+    padding: var(--space-sm) var(--space-md);
+  }
+}

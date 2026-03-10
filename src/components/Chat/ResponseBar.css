@@ -1,0 +1,47 @@
+.response-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-xs);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-bubble:hover .response-bar {
+  opacity: 1;
+}
+
+.response-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.response-bar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.response-bar-btn.active {
+  color: var(--accent-primary);
+}
+
+.response-bar-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.copied-tooltip {
+  font-size: 0.6875rem;
+  color: var(--accent-success);
+  font-weight: 500;
+  padding: 2px 6px;
+  animation: fadeIn var(--transition-fast) ease-out;
+}

@@ -1,0 +1,214 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import { createThread, addMessage, getMessagesByThread, updateThread } from '../../services/storage';
+import { streamChat, generateTitle } from '../../services/openai';
+import { initOpenAI, getOpenAIClient } from '../../services/openai';
+import { getSchemaTemplate } from '../../schemas';
+import './InputConsole.css';
+
+export default function InputConsole({ threadId, activeSchema, onThreadCreated, refreshKey }) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const textareaRef = useRef(null);
+  const abortRef = useRef(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+  }, [text]);
+
+  // Listen for suggestion clicks
+  useEffect(() => {
+    const handler = (e) => {
+      setText(e.detail.prompt);
+      textareaRef.current?.focus();
+    };
+    window.addEventListener('scribe:suggestion-click', handler);
+    return () => window.removeEventListener('scribe:suggestion-click', handler);
+  }, []);
+
+  // Init OpenAI if key exists
+  useEffect(() => {
+    const key = sessionStorage.getItem('scribe_openai_key');
+    if (key && !getOpenAIClient()) {
+      initOpenAI(key);
+    }
+  }, []);
+
+  const sendMessage = useCallback(async () => {
+    const content = text.trim();
+    if (!content || sending) return;
+
+    setSending(true);
+    setText('');
+
+    let currentThreadId = threadId;
+
+    try {
+      // Create thread if needed
+      if (!currentThreadId) {
+        const newThread = {
+          id: uuidv4(),
+          title: 'New Chat',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          isPinned: false,
+        };
+        await createThread(newThread);
+        currentThreadId = newThread.id;
+        onThreadCreated(currentThreadId);
+      }
+
+      // Save user message
+      const userMsg = {
+        id: uuidv4(),
+        threadId: currentThreadId,
+        role: 'user',
+        content,
+        timestamp: Date.now(),
+      };
+      await addMessage(userMsg);
+      window.dispatchEvent(new CustomEvent('scribe:new-message', { detail: { threadId: currentThreadId } }));
+
+      // Build message history
+      const history = await getMessagesByThread(currentThreadId);
+      const chatMessages = history.map(m => ({ role: m.role, content: m.content }));
+
+      // Get schema context
+      const schemaTemplate = activeSchema ? getSchemaTemplate(activeSchema) : null;
+
+      // Check if OpenAI is available
+      if (!getOpenAIClient()) {
+        // No OpenAI key — generate a placeholder response
+        const aiMsg = {
+          id: uuidv4(),
+          threadId: currentThreadId,
+          role: 'assistant',
+          content: '⚠️ **OpenAI API key not set.** Please add your API key in the login screen or settings to enable AI-powered note generation.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas',
+          timestamp: Date.now(),
+        };
+        await addMessage(aiMsg);
+        window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));
+        
+        // Auto-title
+        await updateThread(currentThreadId, { title: content.slice(0, 50) });
+        
+        setSending(false);
+        return;
+      }
+
+      // Stream AI response
+      window.dispatchEvent(new CustomEvent('scribe:stream-start', {}));
+      abortRef.current = new AbortController();
+
+      const fullText = await streamChat(
+        chatMessages,
+        schemaTemplate,
+        (chunk, fullText) => {
+          window.dispatchEvent(new CustomEvent('scribe:stream-chunk', { detail: { chunk, fullText } }));
+        },
+        abortRef.current.signal
+      );
+
+      // Save AI response
+      const aiMsg = {
+        id: uuidv4(),
+        threadId: currentThreadId,
+        role: 'assistant',
+        content: fullText,
+        timestamp: Date.now(),
+      };
+      await addMessage(aiMsg);
+      window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));
+
+      // Auto-generate title if this is the first message
+      if (history.length <= 1) {
+        try {
+          const title = await generateTitle(content);
+          if (title) {
+            await updateThread(currentThreadId, { title });
+          }
+        } catch {
+          // Title generation failed, use truncated message
+          await updateThread(currentThreadId, { title: content.slice(0, 50) });
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Send error:', err);
+        const errorMsg = {
+          id: uuidv4(),
+          threadId: currentThreadId,
+          role: 'assistant',
+          content: `❌ **Error:** ${err.message || 'Something went wrong. Please try again.'}`,
+          timestamp: Date.now(),
+        };
+        await addMessage(errorMsg);
+        window.dispatchEvent(new CustomEvent('scribe:stream-end', { detail: { threadId: currentThreadId } }));
+      }
+    } finally {
+      setSending(false);
+      abortRef.current = null;
+    }
+  }, [text, sending, threadId, activeSchema, onThreadCreated]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const handleStop = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+  };
+
+  return (
+    <div className="input-console-wrapper">
+      <div className="input-console">
+        <div className="input-field-container">
+          <textarea
+            ref={textareaRef}
+            className="input-textarea"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask Scribe to create a note..."
+            rows={1}
+            disabled={sending}
+          />
+          <div className="input-actions">
+            <button className="input-action-btn" title="Attach file" disabled>
+              📎
+            </button>
+            <button className="input-action-btn" title="Voice input" disabled>
+              🎤
+            </button>
+          </div>
+        </div>
+        {sending ? (
+          <button className="send-btn" onClick={handleStop} title="Stop generating">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+          </button>
+        ) : (
+          <button className="send-btn" onClick={sendMessage} disabled={!text.trim()} title="Send message">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <div className="input-disclaimer">
+        Scribe uses AI to generate notes. Always review content before saving.
+      </div>
+    </div>
+  );
+}
