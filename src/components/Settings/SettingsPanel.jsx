@@ -227,7 +227,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
             </div>
 
             <label className="settings-field">
-              <span>Default owner or org</span>
+              <span>Org/Owner</span>
               <select
                 name="githubOwner"
                 value={form.githubOwner || ''}
@@ -250,7 +250,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
             </label>
 
             <label className="settings-field">
-              <span>Default repository</span>
+              <span>Repository</span>
               <select
                 name="githubRepo"
                 value={form.githubRepo || ''}
