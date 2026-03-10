@@ -40,6 +40,61 @@ export async function listRepos() {
 }
 
 /**
+ * List the user's organizations
+ */
+export async function getOrgs() {
+  const { data } = await octokit.rest.orgs.listForAuthenticatedUser();
+  return data;
+}
+
+/**
+ * List repositories for a specific owner (user or organization)
+ */
+export async function getRepos(owner) {
+  const repos = [];
+  let page = 1;
+  const user = await getUser();
+
+  while (true) {
+    let response;
+    if (owner === user.login) {
+      response = await octokit.rest.repos.listForAuthenticatedUser({
+        per_page: 100,
+        page,
+        sort: 'updated',
+        affiliation: 'owner',
+      });
+    } else {
+      try {
+        response = await octokit.rest.repos.listForOrg({
+          org: owner,
+          per_page: 100,
+          page,
+          sort: 'updated',
+          type: 'all',
+        });
+      } catch (err) {
+        if (err.status === 404) {
+          response = await octokit.rest.repos.listForUser({
+            username: owner,
+            per_page: 100,
+            page,
+            sort: 'updated',
+          });
+        } else {
+          throw err;
+        }
+      }
+    }
+    
+    repos.push(...response.data);
+    if (response.data.length < 100) break;
+    page++;
+  }
+  return repos;
+}
+
+/**
  * Create a new repository
  */
 export async function createRepo(name, description = 'My Scribe notes vault', isPrivate = true) {

@@ -4,14 +4,15 @@ import './LoginPage.css';
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const [username, setUsername] = useState('');
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!token.trim()) {
-      setError('Please enter your GitHub Personal Access Token');
+    if (!username.trim() || !token.trim()) {
+      setError('Please enter both your GitHub Username and Personal Access Token');
       return;
     }
 
@@ -19,9 +20,11 @@ export default function LoginPage() {
     setError('');
 
     try {
-      await login(token.trim());
+      await login(username.trim(), token.trim());
     } catch (err) {
-      setError('Invalid token. Please check your GitHub Personal Access Token.');
+      setError(err.message === 'Token does not match the provided username' 
+        ? err.message 
+        : 'Invalid credentials. Please check your username and Personal Access Token.');
     } finally {
       setLoading(false);
     }
@@ -39,6 +42,19 @@ export default function LoginPage() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="login-input-group">
+            <label htmlFor="github-username">GitHub Username</label>
+            <input
+              id="github-username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. mbostock"
+              autoComplete="username"
+              autoFocus
+            />
+          </div>
+
+          <div className="login-input-group">
             <label htmlFor="github-token">GitHub Personal Access Token</label>
             <input
               id="github-token"
@@ -46,8 +62,7 @@ export default function LoginPage() {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="ghp_xxxxxxxxxxxx"
-              autoComplete="off"
-              autoFocus
+              autoComplete="current-password"
             />
           </div>
 

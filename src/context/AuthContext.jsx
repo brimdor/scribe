@@ -26,13 +26,23 @@ export function AuthProvider({ children }) {
     }
   }, [token]);
 
-  const login = useCallback(async (githubToken) => {
+  const login = useCallback(async (username, githubToken) => {
+    if (!username || !githubToken) {
+      throw new Error('Username and token are required');
+    }
+
     storeToken(githubToken);
     setToken(githubToken);
     initGitHub(githubToken);
 
     try {
       const userData = await getUser();
+      
+      // Validate that the provided username matches the token's owner
+      if (userData.login.toLowerCase() !== username.toLowerCase()) {
+        throw new Error('Token does not match the provided username');
+      }
+
       const userInfo = {
         login: userData.login,
         name: userData.name || userData.login,
