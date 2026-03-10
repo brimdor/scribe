@@ -258,6 +258,30 @@ async function parseEventStream(body, onChunk) {
   return fullText;
 }
 
+export async function fetchOpenAIModels({ session, signal } = {}) {
+  const response = await fetch('https://api.openai.com/v1/models', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+    },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload.data)) {
+    return [];
+  }
+
+  return payload.data
+    .map((model) => model.id)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+}
+
 async function createCodexResponse({ session, model, messages, schemaContext, signal, stream = true, onChunk }) {
   const headers = {
     'Content-Type': 'application/json',

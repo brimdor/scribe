@@ -13,6 +13,7 @@ import {
 import {
   completeOpenAIOAuthCallback,
   createOpenAIDeviceFlow,
+  fetchOpenAIModels,
   isOpenAIOAuthCallback,
   pollOpenAIDeviceFlow,
 } from '../services/openai-oauth';
@@ -28,6 +29,8 @@ export function SettingsProvider({ children }) {
   const [openAIOAuthMessage, setOpenAIOAuthMessage] = useState('');
   const [callbackInProgress, setCallbackInProgress] = useState(false);
   const [oauthBusy, setOAuthBusy] = useState(false);
+  const [agentModels, setAgentModels] = useState([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
   const settingsRef = useRef(DEFAULT_APP_SETTINGS);
   const devicePollingRef = useRef(false);
 
@@ -161,6 +164,44 @@ export function SettingsProvider({ children }) {
     };
   }, [openAIOAuthPendingFlow, persistSettings]);
 
+  useEffect(() => {
+    if (settings.openaiConnectionMethod !== 'oauth' || !openAIOAuthSession || openAIOAuthSession.status !== 'connected') {
+      setAgentModels([]);
+      setFetchingModels(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    
+    const loadModels = async () => {
+      setFetchingModels(true);
+      try {
+        const models = await fetchOpenAIModels({
+          session: openAIOAuthSession,
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
+          setAgentModels(models);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Failed to fetch OpenAI models:', error);
+          setAgentModels([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setFetchingModels(false);
+        }
+      }
+    };
+
+    loadModels();
+
+    return () => {
+      controller.abort();
+    };
+  }, [openAIOAuthSession, settings.openaiConnectionMethod]);
+
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
 
@@ -289,6 +330,8 @@ export function SettingsProvider({ children }) {
     openAIOAuthStatus: openAIOAuthSession?.status || (openAIOAuthPendingFlow ? 'connecting' : 'disconnected'),
     callbackInProgress,
     oauthBusy,
+    agentModels,
+    fetchingModels,
     connectOpenAI,
     disconnectOpenAI,
     completeOpenAICallback,
@@ -305,6 +348,8 @@ export function SettingsProvider({ children }) {
     openAIOAuthMessage,
     callbackInProgress,
     oauthBusy,
+    agentModels,
+    fetchingModels,
     connectOpenAI,
     disconnectOpenAI,
     completeOpenAICallback,

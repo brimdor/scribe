@@ -79,7 +79,8 @@ As a user who may switch between OpenAI and other OpenAI-compatible providers, I
 - **FR-011**: The application MUST prevent chat requests from silently failing when OpenAI OAuth is required but unavailable, and MUST direct the user to reconnect or switch configuration.
 - **FR-012**: The application MUST keep the OpenAI OAuth setup and management experience usable on desktop and mobile layouts.
 - **FR-013**: The application MUST hide the Base URL and API key fields in the settings when the "OpenAI sign-in" connection mode is selected.
-- **FR-014**: The application MUST provide a dropdown or datalist of common OpenAI models instead of requiring the user to type the model name manually.
+- **FR-014**: When "OpenAI sign-in" mode is selected and connected, the application MUST fetch available models from the OpenAI API and display them in a `<select>` dropdown, instead of requiring manual typed input.
+- **FR-015**: When "OpenAI API manual connection" mode is selected, the application MUST preserve the standard text `<input>` for the model name to support generic providers.
 
 ### Key Entities *(include if feature involves data)*
 

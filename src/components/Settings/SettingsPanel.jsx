@@ -15,6 +15,8 @@ export default function SettingsPanel({ isOpen, onClose }) {
     openAIOAuthStatus,
     openAIOAuthMessage,
     oauthBusy,
+    agentModels,
+    fetchingModels,
     connectOpenAI,
     disconnectOpenAI,
     clearOpenAIMessage,
@@ -75,7 +77,13 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
   const handleChange = (event) => {
     const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+    setForm((current) => {
+      const updates = { [name]: value };
+      if (name === 'openaiConnectionMethod' && value !== current.openaiConnectionMethod) {
+        updates.agentModel = '';
+      }
+      return { ...current, ...updates };
+    });
     setError('');
     setStatus('');
     clearOpenAIMessage();
@@ -297,21 +305,35 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
             <label className="settings-field">
               <span>Model</span>
-              <input
-                name="agentModel"
-                list="agent-models"
-                value={form.agentModel}
-                onChange={handleChange}
-                placeholder="gpt-4o"
-              />
-              <datalist id="agent-models">
-                <option value="gpt-4o" />
-                <option value="chatgpt-4o-latest" />
-                <option value="gpt-4o-mini" />
-                <option value="o1" />
-                <option value="o1-mini" />
-                <option value="o3-mini" />
-              </datalist>
+              {form.openaiConnectionMethod === 'oauth' && isOAuthConnected ? (
+                <select 
+                  name="agentModel" 
+                  value={form.agentModel} 
+                  onChange={handleChange}
+                  disabled={fetchingModels || !agentModels.length}
+                >
+                  {fetchingModels ? (
+                    <option value="">Loading models...</option>
+                  ) : agentModels.length > 0 ? (
+                    <>
+                      <option value="" disabled>Select a model</option>
+                      {agentModels.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </>
+                  ) : (
+                    <option value="">No models available</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  name="agentModel"
+                  value={form.agentModel}
+                  onChange={handleChange}
+                  placeholder={form.openaiConnectionMethod === 'oauth' ? 'Connect OpenAI first' : 'gpt-4o'}
+                  disabled={form.openaiConnectionMethod === 'oauth'}
+                />
+              )}
             </label>
           </section>
 
