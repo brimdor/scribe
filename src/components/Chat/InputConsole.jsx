@@ -64,12 +64,14 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
     });
   }, [settings, openAIOAuthSession]);
 
-  const sendMessage = useCallback(async () => {
-    const content = text.trim();
+  const sendMessage = useCallback(async (overrideText = '') => {
+    const content = String(overrideText || text).trim();
     if (!content || sending) return;
 
     setSending(true);
-    setText('');
+    if (!overrideText) {
+      setText('');
+    }
 
     let currentThreadId = threadId;
     const currentConfig = getOpenAIConfig();
@@ -226,6 +228,20 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
       abortRef.current = null;
     }
   }, [text, sending, threadId, activeSchema, onThreadCreated, updateThreadTitle, canAutoTitleThread]);
+
+  useEffect(() => {
+    const handleSaveNoteRequest = (event) => {
+      const prompt = String(event?.detail?.prompt || '').trim();
+      if (!prompt || sending) {
+        return;
+      }
+
+      sendMessage(prompt);
+    };
+
+    window.addEventListener('scribe:save-note-request', handleSaveNoteRequest);
+    return () => window.removeEventListener('scribe:save-note-request', handleSaveNoteRequest);
+  }, [sendMessage, sending]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

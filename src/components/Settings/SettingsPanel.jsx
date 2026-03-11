@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useTheme } from '../../context/ThemeContext';
+import { getAgentToolCatalog } from '../../services/agent-tools';
 import { getOrgs, getRepos, syncAssignedRepo } from '../../services/github';
 import './SettingsPanel.css';
 
@@ -84,6 +85,15 @@ export default function SettingsPanel({ isOpen, onClose }) {
   }, [isOpen, onClose]);
 
   const themeValue = useMemo(() => (isManual ? theme : 'system'), [isManual, theme]);
+  const toolCatalog = useMemo(() => getAgentToolCatalog(), []);
+  const toolGroups = useMemo(() => toolCatalog.reduce((groups, tool) => {
+    if (!groups[tool.category]) {
+      groups[tool.category] = [];
+    }
+
+    groups[tool.category].push(tool);
+    return groups;
+  }, {}), [toolCatalog]);
   const isOAuthConnected = openAIOAuthStatus === 'connected' && !!openAIOAuthSession;
   const isOAuthConnecting = openAIOAuthStatus === 'connecting';
   const devicePendingFlow = openAIOAuthPendingFlow?.type === 'device' ? openAIOAuthPendingFlow : null;
@@ -111,14 +121,14 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
   const formatSyncStatus = (sync) => {
     if (!sync) {
-      return 'Repository sync skipped.';
+      return 'Repository refresh skipped.';
     }
 
     if (sync.status === 'skipped') {
-      return sync.message || 'Repository sync skipped.';
+      return sync.message || 'Repository refresh skipped.';
     }
 
-    const action = sync.status === 'cloned' ? 'cloned' : 'updated';
+    const action = sync.status === 'cloned' ? 'cloned' : 'refreshed';
     const target = sync.localPath || `${sync.username}/${sync.repo}`;
     return `Repository ${action}: ${target}`;
   };
@@ -387,12 +397,12 @@ export default function SettingsPanel({ isOpen, onClose }) {
                 onClick={handleSyncNow}
                 disabled={saving || loading || syncingRepo || !form.githubOwner || !form.githubRepo}
               >
-                {syncingRepo ? 'Syncing...' : 'Sync repository'}
+                {syncingRepo ? 'Refreshing...' : 'Refresh repository'}
               </button>
               <div className="settings-sync-meta">
                 <span className={`settings-oauth-badge settings-sync-badge ${syncBadge.tone}`}>{syncBadge.label}</span>
                 <span className="settings-helper-text">
-                  {repoSyncMeta?.message || 'Pull latest remote changes when safe; sync skips when local changes are detected.'}
+                  {repoSyncMeta?.message || 'Refresh pulls the latest remote changes when safe. Publishing note edits happens separately through agent tools.'}
                 </span>
               </div>
             </div>
@@ -519,6 +529,33 @@ export default function SettingsPanel({ isOpen, onClose }) {
                 />
               )}
             </label>
+
+            <div className="settings-card settings-tools-card">
+              <div className="settings-card-row settings-tools-header">
+                <div>
+                  <span>Agent tool suite</span>
+                  <strong>{toolCatalog.length} tools available</strong>
+                </div>
+                <div className={`settings-oauth-badge ${form.openaiConnectionMethod === 'manual' ? 'success' : 'info'}`}>
+                  {form.openaiConnectionMethod === 'manual' ? 'Tool ready' : 'Fallback mode'}
+                </div>
+              </div>
+              <p className="settings-helper-text">
+                Manual OpenAI-compatible providers can use the reusable tool registry for repository files, git inspection, sync, and GitHub context. OAuth mode keeps repo-aware assistance but does not force native tool calls.
+              </p>
+              <div className="settings-tool-groups">
+                {Object.entries(toolGroups).map(([category, tools]) => (
+                  <div key={category} className="settings-tool-group">
+                    <span className="settings-tool-group-title">{category}</span>
+                    <div className="settings-tool-chips">
+                      {tools.map((tool) => (
+                        <span key={tool.name} className="settings-tool-chip" title={tool.description}>{tool.name}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
 
           {(error || status || loading || openAIOAuthMessage) && (

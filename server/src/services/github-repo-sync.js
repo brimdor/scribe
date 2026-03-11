@@ -71,7 +71,7 @@ function encodeGitAuthHeader(token) {
   return `AUTHORIZATION: basic ${raw}`;
 }
 
-async function runGitCommand(args, { cwd = process.cwd(), extraEnv = {} } = {}) {
+export async function runGitCommand(args, { cwd = process.cwd(), extraEnv = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd,
@@ -106,7 +106,7 @@ async function runGitCommand(args, { cwd = process.cwd(), extraEnv = {} } = {}) 
   });
 }
 
-async function runGit(args, { token, cwd = process.cwd() } = {}) {
+export async function runGit(args, { token, cwd = process.cwd() } = {}) {
   const authArg = encodeGitAuthHeader(token);
   const commandArgs = [
     '-c',
@@ -125,6 +125,141 @@ function parseAheadBehind(value) {
   return {
     ahead: Number.isFinite(ahead) ? ahead : 0,
     behind: Number.isFinite(behind) ? behind : 0,
+  };
+}
+
+function getCommitIdentity(username) {
+  const safeUsername = requireSafeSegment(username, 'GitHub username');
+  return {
+    name: safeUsername,
+    email: `${safeUsername}@users.noreply.github.com`,
+  };
+}
+
+export async function publishRepoChangesForUser({
+  userId,
+  username,
+  owner,
+  repo,
+  filePaths = [],
+  commitMessage = '',
+  reason = 'manual-publish',
+}) {
+  const assignment = resolveAssignedRepoForUser({ userId, username, owner, repo });
+  if (!assignment) {
+    return {
+      status: 'skipped',
+      reason,
+      publishState: 'no-assignment',
+      owner: '',
+      repo: '',
+      username: normalizeSegment(username),
+      localPath: '',
+      branch: '',
+      commitSha: '',
+      message: 'No repository assignment configured.',
+    };
+  }
+
+  const token = getTokenForUser(userId);
+  if (!token) {
+    throw new Error('GitHub token is unavailable for this user session.');
+  }
+
+  const gitDirPath = path.join(assignment.repoPath, '.git');
+  if (!fs.existsSync(assignment.repoPath) || !fs.existsSync(gitDirPath)) {
+    throw new Error(`Repository checkout is not available at ${assignment.localPath}. Run refresh first.`);
+  }
+
+  const { stdout: branchName } = await runGitCommand(['-C', assignment.repoPath, 'rev-parse', '--abbrev-ref', 'HEAD']);
+  if (branchName !== 'main') {
+    throw new Error(`Publishing only supports the main branch right now. Current branch: ${branchName}`);
+  }
+
+  await runGit(['-C', assignment.repoPath, 'fetch', '--prune'], { token });
+  const { stdout: counts } = await runGitCommand(['-C', assignment.repoPath, 'rev-list', '--left-right', '--count', 'HEAD...origin/main']);
+  const { ahead, behind } = parseAheadBehind(counts);
+
+  if (behind > 0) {
+    return {
+      status: 'skipped',
+      reason,
+      publishState: 'behind-remote',
+      owner: assignment.owner,
+      repo: assignment.repo,
+      username: assignment.username,
+      localPath: assignment.localPath,
+      branch: branchName,
+      commitSha: '',
+      message: 'Local checkout is behind origin/main. Refresh the repository before publishing changes.',
+    };
+  }
+
+  const normalizedPaths = Array.isArray(filePaths)
+    ? filePaths.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+
+  if (normalizedPaths.length) {
+    await runGitCommand(['-C', assignment.repoPath, 'add', '--', ...normalizedPaths]);
+  } else {
+    await runGitCommand(['-C', assignment.repoPath, 'add', '-A']);
+  }
+
+  const { stdout: stagedStatus } = await runGitCommand(['-C', assignment.repoPath, 'diff', '--cached', '--name-only']);
+  const stagedFiles = stagedStatus.split(/\r?\n/).filter(Boolean);
+
+  if (!stagedFiles.length) {
+    return {
+      status: 'skipped',
+      reason,
+      publishState: 'no-changes',
+      owner: assignment.owner,
+      repo: assignment.repo,
+      username: assignment.username,
+      localPath: assignment.localPath,
+      branch: branchName,
+      commitSha: '',
+      message: 'No local changes were staged for publishing.',
+    };
+  }
+
+  const message = String(commitMessage || '').trim() || `sync notes from Scribe (${new Date().toISOString().slice(0, 10)})`;
+  const identity = getCommitIdentity(assignment.username);
+  await runGitCommand([
+    '-C',
+    assignment.repoPath,
+    '-c',
+    `user.name=${identity.name}`,
+    '-c',
+    `user.email=${identity.email}`,
+    'commit',
+    '-m',
+    message,
+  ]);
+
+  const { stdout: commitSha } = await runGitCommand(['-C', assignment.repoPath, 'rev-parse', 'HEAD']);
+  await runGit(['-C', assignment.repoPath, 'push', 'origin', 'main'], { token });
+  await runGit(['-C', assignment.repoPath, 'fetch', '--prune', 'origin', 'main'], { token });
+  const { stdout: remoteHeadSha } = await runGitCommand(['-C', assignment.repoPath, 'rev-parse', 'origin/main']);
+
+  if (remoteHeadSha !== commitSha) {
+    throw new Error('Push completed but remote verification failed: origin/main does not match the published commit.');
+  }
+
+  return {
+    status: 'published',
+    reason,
+    publishState: ahead > 0 ? 'published-ahead' : 'published',
+    owner: assignment.owner,
+    repo: assignment.repo,
+    username: assignment.username,
+    localPath: assignment.localPath,
+    branch: branchName,
+    commitSha,
+    remoteHeadSha,
+    validatedRemote: true,
+    stagedFiles,
+    message: `Published ${stagedFiles.length} file${stagedFiles.length === 1 ? '' : 's'} to origin/main.`,
   };
 }
 

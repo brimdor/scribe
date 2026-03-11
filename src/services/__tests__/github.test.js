@@ -13,10 +13,11 @@ describe('github service', () => {
   });
 
   it('detects repo freshness prompts for assistant sync tool', async () => {
-    const { shouldRunRepoSyncTool } = await import('../github');
+    const { shouldRunRepoSyncTool, shouldUseRepoKnowledgeBase } = await import('../github');
 
     expect(shouldRunRepoSyncTool('Pull latest repo and summarize commits')).toBe(true);
     expect(shouldRunRepoSyncTool('Keep this response concise.')).toBe(false);
+    expect(shouldUseRepoKnowledgeBase('What are my current note tags?')).toBe(true);
   });
 
   it('posts to sync endpoint with override values', async () => {
@@ -104,6 +105,152 @@ describe('github service', () => {
 
     expect(context?.contextText).toContain('Local changes detected');
     expect(context?.contextText).toContain('README.md');
-    expect(apiRequest).toHaveBeenCalledTimes(3);
+    expect(apiRequest).toHaveBeenCalledTimes(4);
+  });
+
+  it('builds note-tag context for note knowledge-base prompts', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        tree: {
+          dir: '',
+          entries: [
+            { type: 'file', name: 'README.md', path: 'README.md' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        noteTags: {
+          scannedFiles: 2,
+          tags: [
+            { tag: 'project', count: 2, files: ['Projects/Watchtower.md'] },
+            { tag: 'journal', count: 1, files: ['Journal/Journal.md'] },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        notes: {
+          notes: [
+            { path: 'Projects/Watchtower.md', title: 'Watchtower', tags: ['project', 'homelab'] },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        search: {
+          results: [
+            { path: 'Projects/Watchtower.md', line: 2, preview: 'tags: [project, homelab]' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        search: {
+          results: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        file: {
+          path: 'Projects/Watchtower.md',
+          content: '---\ntags: [project, homelab]\n---',
+          truncated: false,
+        },
+      });
+
+    const { buildRepoContextForPrompt } = await import('../github');
+    const context = await buildRepoContextForPrompt('What are my current note tags?');
+
+    expect(context?.contextText).toContain('Repository note tags');
+    expect(context?.contextText).toContain('project (2)');
+    expect(context?.contextText).toContain('Projects/Watchtower.md');
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/note-tags');
+  });
+
+  it('calls repository tool endpoints with structured parameters', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ file: { path: 'notes/todo.md', created: true } })
+      .mockResolvedValueOnce({ search: { results: [{ path: 'README.md' }] } })
+      .mockResolvedValueOnce({ status: { clean: true } })
+      .mockResolvedValueOnce({ diff: { hasChanges: false } })
+      .mockResolvedValueOnce({ log: { entries: [] } })
+      .mockResolvedValueOnce({ publish: { status: 'published', branch: 'main' } })
+      .mockResolvedValueOnce({ file: { path: 'Projects/Scribe.md', created: true } })
+      .mockResolvedValueOnce({ publish: { status: 'published', branch: 'main', stagedFiles: ['Projects/Scribe.md'] } })
+      .mockResolvedValueOnce({ issues: [{ number: 1, title: 'Issue' }] })
+      .mockResolvedValueOnce({ pulls: [{ number: 2, title: 'PR' }] })
+      .mockResolvedValueOnce({ noteTags: { tags: [{ tag: 'project', count: 1 }] } })
+      .mockResolvedValueOnce({ notes: { notes: [{ path: 'Projects/Watchtower.md', title: 'Watchtower' }] } })
+      .mockResolvedValueOnce({ notes: { tag: 'project', notes: [{ path: 'Projects/Watchtower.md', title: 'Watchtower' }] } })
+      .mockResolvedValueOnce({ note: { path: 'Projects/Watchtower.md', frontmatter: { title: 'Watchtower' } } });
+
+    const {
+      findLocalRepoNotesByTag,
+      getLocalGitDiff,
+      getLocalGitLog,
+      getLocalGitStatus,
+      listLocalRepoNotes,
+      listLocalRepoNoteTags,
+      publishRepoChanges,
+      listRepoIssues,
+      listRepoPullRequests,
+      readLocalRepoNoteFrontmatter,
+      saveNoteToRepoAndPublish,
+      searchLocalRepoFiles,
+      writeLocalRepoFile,
+    } = await import('../github');
+
+    await writeLocalRepoFile({ filePath: 'notes/todo.md', content: 'hello' });
+    await searchLocalRepoFiles({ query: 'readme', limit: 5 });
+    await getLocalGitStatus();
+    await getLocalGitDiff({ filePath: 'README.md' });
+    await getLocalGitLog({ limit: 5 });
+    await publishRepoChanges({ filePaths: ['Projects/Scribe.md'], commitMessage: 'sync notes from Scribe' });
+    await saveNoteToRepoAndPublish({ filePath: 'Projects/Scribe.md', content: '# Scribe', commitMessage: 'publish note' });
+    await listRepoIssues();
+    await listRepoPullRequests();
+    await listLocalRepoNoteTags();
+    await listLocalRepoNotes({ limit: 10 });
+    await findLocalRepoNotesByTag({ tag: 'project', limit: 5 });
+    await readLocalRepoNoteFrontmatter({ filePath: 'Projects/Watchtower.md' });
+
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/github/repo/file', {
+      method: 'PUT',
+      body: {
+        path: 'notes/todo.md',
+        content: 'hello',
+        createDirectories: true,
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/search?q=readme&limit=5');
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/github/repo/git/status');
+    expect(apiRequest).toHaveBeenNthCalledWith(4, '/api/github/repo/git/diff?path=README.md');
+    expect(apiRequest).toHaveBeenNthCalledWith(5, '/api/github/repo/git/log?limit=5');
+    expect(apiRequest).toHaveBeenNthCalledWith(6, '/api/github/publish', {
+      method: 'POST',
+      body: {
+        reason: 'manual-publish',
+        filePaths: ['Projects/Scribe.md'],
+        commitMessage: 'sync notes from Scribe',
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(7, '/api/github/repo/file', {
+      method: 'PUT',
+      body: {
+        path: 'Projects/Scribe.md',
+        content: '# Scribe',
+        createDirectories: true,
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(8, '/api/github/publish', {
+      method: 'POST',
+      body: {
+        reason: 'save-note-and-publish',
+        filePaths: ['Projects/Scribe.md'],
+        commitMessage: 'publish note',
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(9, '/api/github/issues');
+    expect(apiRequest).toHaveBeenNthCalledWith(10, '/api/github/pulls');
+    expect(apiRequest).toHaveBeenNthCalledWith(11, '/api/github/repo/note-tags');
+    expect(apiRequest).toHaveBeenNthCalledWith(12, '/api/github/repo/notes?limit=10');
+    expect(apiRequest).toHaveBeenNthCalledWith(13, '/api/github/repo/notes/by-tag?tag=project&limit=5');
+    expect(apiRequest).toHaveBeenNthCalledWith(14, '/api/github/repo/note/frontmatter?path=Projects%2FWatchtower.md');
   });
 });
