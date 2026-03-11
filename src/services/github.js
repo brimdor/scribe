@@ -11,6 +11,9 @@ const DEFAULT_FILE_BYTES = 24 * 1024;
 const DEFAULT_FILE_LINES = 180;
 const MAX_CONTEXT_FILES = 3;
 const MAX_CONTEXT_CHARS = 12_000;
+const REPO_KNOWLEDGE_HINT_PATTERN = /\b(note|notes|tag|tags|markdown|obsidian|wikilink|frontmatter|repo|repository|readme|document|documents|file|files|folder|directory|search|find|summari[sz]e|what\s+are|list|show|edit|update|create|write)\b/i;
+const TAG_HINT_PATTERN = /\btag|tags|tagging\b/i;
+const NOTE_HINT_PATTERN = /\b(note|notes|markdown|obsidian|frontmatter|wikilink|journal|project|daily note|meeting note)\b/i;
 
 function buildPathWithQuery(basePath, params) {
   const query = params.toString();
@@ -106,6 +109,35 @@ export async function syncAssignedRepo({ owner, repo, reason = 'manual-sync' } =
   return response.sync;
 }
 
+export async function publishRepoChanges({ owner, repo, filePaths = [], commitMessage = '', reason = 'manual-publish' } = {}) {
+  const payload = {
+    reason,
+  };
+
+  if (typeof owner === 'string' && owner.trim()) {
+    payload.owner = owner.trim();
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    payload.repo = repo.trim();
+  }
+
+  if (Array.isArray(filePaths) && filePaths.length) {
+    payload.filePaths = filePaths;
+  }
+
+  if (typeof commitMessage === 'string' && commitMessage.trim()) {
+    payload.commitMessage = commitMessage.trim();
+  }
+
+  const response = await apiRequest('/api/github/publish', {
+    method: 'POST',
+    body: payload,
+  });
+
+  return response.publish;
+}
+
 export async function listLocalRepoTree({ owner, repo, dir = '', limit = DEFAULT_TREE_LIMIT } = {}) {
   const params = new URLSearchParams();
 
@@ -147,6 +179,297 @@ export async function readLocalRepoFile({ owner, repo, filePath, maxBytes = DEFA
 
   const response = await apiRequest(buildPathWithQuery('/api/github/repo/file', params));
   return response.file;
+}
+
+export async function writeLocalRepoFile({ owner, repo, filePath, content, createDirectories = true } = {}) {
+  const payload = {
+    path: String(filePath || '').trim(),
+    content,
+    createDirectories: createDirectories !== false,
+  };
+
+  if (typeof owner === 'string' && owner.trim()) {
+    payload.owner = owner.trim();
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    payload.repo = repo.trim();
+  }
+
+  const response = await apiRequest('/api/github/repo/file', {
+    method: 'PUT',
+    body: payload,
+  });
+
+  return response.file;
+}
+
+export async function searchLocalRepoFiles({ owner, repo, query, dir = '', limit = 20 } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  params.set('q', String(query || '').trim());
+
+  if (typeof dir === 'string' && dir.trim()) {
+    params.set('dir', dir.trim());
+  }
+
+  params.set('limit', String(limit));
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/search', params));
+  return response.search;
+}
+
+export async function getLocalGitStatus({ owner, repo } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/git/status', params));
+  return response.status;
+}
+
+export async function getLocalGitDiff({ owner, repo, filePath = '' } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  if (typeof filePath === 'string' && filePath.trim()) {
+    params.set('path', filePath.trim());
+  }
+
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/git/diff', params));
+  return response.diff;
+}
+
+export async function getLocalGitLog({ owner, repo, limit = 10 } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  params.set('limit', String(limit));
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/git/log', params));
+  return response.log;
+}
+
+export async function listRepoIssues({ owner, repo } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  const response = await apiRequest(buildPathWithQuery('/api/github/issues', params));
+  return response.issues;
+}
+
+export async function listRepoPullRequests({ owner, repo } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  const response = await apiRequest(buildPathWithQuery('/api/github/pulls', params));
+  return response.pulls;
+}
+
+export async function listLocalRepoNoteTags({ owner, repo } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/note-tags', params));
+  return response.noteTags;
+}
+
+export async function listLocalRepoNotes({ owner, repo, dir = '', limit = 20 } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  if (typeof dir === 'string' && dir.trim()) {
+    params.set('dir', dir.trim());
+  }
+
+  params.set('limit', String(limit));
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/notes', params));
+  return response.notes;
+}
+
+export async function findLocalRepoNotesByTag({ owner, repo, tag, limit = 20 } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  params.set('tag', String(tag || '').trim());
+  params.set('limit', String(limit));
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/notes/by-tag', params));
+  return response.notes;
+}
+
+export async function readLocalRepoNoteFrontmatter({ owner, repo, filePath } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  if (!filePath || !String(filePath).trim()) {
+    throw new Error('File path is required.');
+  }
+
+  params.set('path', String(filePath).trim());
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/note/frontmatter', params));
+  return response.note;
+}
+
+export async function saveNoteToRepoAndPublish({ owner, repo, filePath, content, commitMessage = '', createDirectories = true } = {}) {
+  const written = await writeLocalRepoFile({
+    owner,
+    repo,
+    filePath,
+    content,
+    createDirectories,
+  });
+
+  const publish = await publishRepoChanges({
+    owner,
+    repo,
+    filePaths: [written.path],
+    commitMessage,
+    reason: 'save-note-and-publish',
+  });
+
+  return {
+    file: written,
+    publish,
+  };
+}
+
+export function shouldUseRepoKnowledgeBase(prompt = '') {
+  const normalized = String(prompt || '').trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return shouldRunRepoSyncTool(normalized)
+    || REPO_KNOWLEDGE_HINT_PATTERN.test(normalized)
+    || extractPromptFilePaths(normalized).length > 0;
+}
+
+export function shouldRequireToolUsage(prompt = '') {
+  const normalized = String(prompt || '').trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return shouldUseRepoKnowledgeBase(normalized) || /\b(edit|update|rewrite|create|write|modify|save|sync|publish|commit|push)\b/i.test(normalized);
+}
+
+function extractPromptTags(prompt = '') {
+  const matches = new Set();
+  const normalized = String(prompt || '');
+  const hashtagPattern = /#([A-Za-z][A-Za-z0-9/_-]*)\b/g;
+  let match = hashtagPattern.exec(normalized);
+  while (match) {
+    matches.add(match[1].toLowerCase());
+    match = hashtagPattern.exec(normalized);
+  }
+
+  const phrasePatterns = [
+    /\btag(?:ged)?\s+([A-Za-z][A-Za-z0-9/_-]*)\b/gi,
+    /\bnotes?\s+(?:with|using)\s+tag\s+([A-Za-z][A-Za-z0-9/_-]*)\b/gi,
+  ];
+
+  phrasePatterns.forEach((pattern) => {
+    let phraseMatch = pattern.exec(normalized);
+    while (phraseMatch) {
+      matches.add(phraseMatch[1].toLowerCase());
+      phraseMatch = pattern.exec(normalized);
+    }
+  });
+
+  return Array.from(matches).slice(0, 3);
+}
+
+function extractPromptSearchQueries(prompt = '') {
+  const normalized = String(prompt || '').trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const queries = [];
+  if (TAG_HINT_PATTERN.test(normalized)) {
+    queries.push('tags');
+  }
+
+  if (/\b(readme|setup|install|getting started)\b/i.test(normalized)) {
+    queries.push('readme');
+  }
+
+  if (/\b(note|notes|markdown|obsidian)\b/i.test(normalized)) {
+    queries.push('title');
+  }
+
+  const tagMatches = extractPromptTags(normalized);
+  tagMatches.forEach((tag) => queries.push(tag));
+
+  return Array.from(new Set(queries)).slice(0, 2);
 }
 
 export function shouldRunRepoSyncTool(prompt = '') {
@@ -209,12 +532,18 @@ export function getLatestUserPrompt(messages = []) {
 }
 
 export async function buildRepoContextForPrompt(prompt, { reason = 'assistant-tool' } = {}) {
-  if (!shouldRunRepoSyncTool(prompt)) {
+  if (!shouldUseRepoKnowledgeBase(prompt)) {
     return null;
   }
 
-  const sync = await runRepoSyncToolForPrompt(prompt, { reason });
+  const sync = shouldRunRepoSyncTool(prompt)
+    ? await runRepoSyncToolForPrompt(prompt, { reason })
+    : null;
   let tree = null;
+  let noteTags = null;
+  let notes = null;
+  const taggedNotes = [];
+  const searches = [];
 
   try {
     tree = await listLocalRepoTree();
@@ -222,7 +551,53 @@ export async function buildRepoContextForPrompt(prompt, { reason = 'assistant-to
     tree = null;
   }
 
+  if (TAG_HINT_PATTERN.test(prompt)) {
+    try {
+      noteTags = await listLocalRepoNoteTags();
+    } catch {
+      noteTags = null;
+    }
+  }
+
+  if (NOTE_HINT_PATTERN.test(prompt)) {
+    try {
+      notes = await listLocalRepoNotes({ limit: 12 });
+    } catch {
+      notes = null;
+    }
+  }
+
+  for (const tag of extractPromptTags(prompt)) {
+    try {
+      const tagged = await findLocalRepoNotesByTag({ tag, limit: 8 });
+      taggedNotes.push(tagged);
+    } catch {
+      // Ignore tag lookup failures.
+    }
+  }
+
+  for (const query of extractPromptSearchQueries(prompt)) {
+    try {
+      const search = await searchLocalRepoFiles({ query, limit: 5 });
+      searches.push(search);
+    } catch {
+      // Ignore search failures and continue building best-effort repo context.
+    }
+  }
+
   const requestedFiles = extractPromptFilePaths(prompt);
+  for (const search of searches) {
+    for (const result of search?.results || []) {
+      if (requestedFiles.length >= MAX_CONTEXT_FILES) {
+        break;
+      }
+
+      if (!requestedFiles.includes(result.path)) {
+        requestedFiles.push(result.path);
+      }
+    }
+  }
+
   if (!requestedFiles.length && tree?.entries?.length) {
     const readme = tree.entries.find((entry) => entry.type === 'file' && /^readme\./i.test(entry.name));
     if (readme?.path) {
@@ -249,6 +624,22 @@ export async function buildRepoContextForPrompt(prompt, { reason = 'assistant-to
     sections.push(`Repository entries under ${tree.dir || '/'}:\n${formatTreeEntries(tree.entries)}`);
   }
 
+  if (noteTags?.tags?.length) {
+    sections.push(`Repository note tags:\n${noteTags.tags.slice(0, 20).map((entry) => `- ${entry.tag} (${entry.count})`).join('\n')}`);
+  }
+
+  if (notes?.notes?.length) {
+    sections.push(`Repository notes:\n${notes.notes.slice(0, 12).map((note) => `- ${note.path} - ${note.title}${note.tags?.length ? ` [${note.tags.join(', ')}]` : ''}`).join('\n')}`);
+  }
+
+  if (taggedNotes.length) {
+    sections.push(`Notes matching requested tags:\n${taggedNotes.flatMap((entry) => (entry?.notes || []).map((note) => `- ${entry.tag}: ${note.path} - ${note.title}`)).slice(0, 12).join('\n')}`);
+  }
+
+  if (searches.length) {
+    sections.push(`Repository search results:\n${searches.flatMap((search) => (search?.results || []).map((result) => `- ${result.path}:${result.line} - ${result.preview}`)).slice(0, 12).join('\n')}`);
+  }
+
   if (files.length) {
     sections.push(`Repository file excerpts:\n${files.map(formatFileSnippet).join('\n\n')}`);
   }
@@ -260,6 +651,10 @@ export async function buildRepoContextForPrompt(prompt, { reason = 'assistant-to
   return {
     sync,
     tree,
+    noteTags,
+    notes,
+    taggedNotes,
+    searches,
     files,
     contextText: trimContext(sections.join('\n\n')),
   };

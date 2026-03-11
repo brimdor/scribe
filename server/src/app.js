@@ -1,5 +1,6 @@
 import express from 'express';
 import authRoutes from './routes/auth-routes.js';
+import debugRoutes from './routes/debug-routes.js';
 import githubRoutes from './routes/github-routes.js';
 import storageRoutes from './routes/storage-routes.js';
 import { enforceSecureTransport } from './middleware/transport.js';
@@ -16,6 +17,7 @@ export function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
+  app.use('/api/debug', debugRoutes);
   app.use('/api/storage', storageRoutes);
   app.use('/api/github', githubRoutes);
 

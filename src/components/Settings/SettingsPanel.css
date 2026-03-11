@@ -235,6 +235,57 @@
   border-color: var(--border-focus);
 }
 
+.settings-tools-card {
+  gap: var(--space-md);
+}
+
+.settings-tools-header {
+  align-items: center;
+}
+
+.settings-tools-header > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-tool-groups {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.settings-tool-group {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-tool-group-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.settings-tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(14, 165, 140, 0.18);
+  background: rgba(14, 165, 140, 0.08);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
 .settings-status {
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);

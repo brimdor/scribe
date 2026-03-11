@@ -1,9 +1,12 @@
 import { useState, useCallback } from 'react';
+import { buildSaveNotePrompt, inferNotePathFromContent, isLikelySavableNote } from '../../utils/note-publish';
 import './ResponseBar.css';
 
 export default function ResponseBar({ message }) {
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState(null); // 'up' | 'down' | null
+  const [saveState, setSaveState] = useState('idle');
+  const canSaveNote = isLikelySavableNote(message.content);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -27,8 +30,37 @@ export default function ResponseBar({ message }) {
     setFeedback(prev => prev === type ? null : type);
   }, []);
 
+  const handleSaveNote = useCallback(() => {
+    const inferredPath = inferNotePathFromContent(message.content);
+    const prompt = buildSaveNotePrompt(message.content, { filePath: inferredPath });
+
+    window.dispatchEvent(new CustomEvent('scribe:save-note-request', {
+      detail: {
+        messageId: message.id,
+        prompt,
+        inferredPath,
+      },
+    }));
+
+    setSaveState('queued');
+    window.setTimeout(() => {
+      setSaveState('idle');
+    }, 2500);
+  }, [message.content, message.id]);
+
   return (
     <div className="response-bar">
+      {canSaveNote && (
+        <button
+          className="response-bar-btn response-bar-btn-accent"
+          onClick={handleSaveNote}
+          disabled={saveState === 'queued'}
+          title="Save this note to the selected repo and publish it"
+        >
+          {saveState === 'queued' ? '✓ Agent queued' : 'Publish note'}
+        </button>
+      )}
+
       <button className="response-bar-btn" onClick={handleCopy} title="Copy">
         {copied ? (
           <span className="copied-tooltip">✓ Copied</span>

@@ -1,6 +1,9 @@
 import OpenAI from 'openai';
 import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
-import { buildRepoContextForPrompt, getLatestUserPrompt } from './github';
+import { getAgentToolSystemPrompt, resolveManualToolMessages, runAgentTool } from './agent-tools';
+import { logAgentEvent } from './debug';
+import { buildRepoContextForPrompt, getLatestUserPrompt, shouldRequireToolUsage, shouldUseRepoKnowledgeBase } from './github';
+import { parseSaveNotePromptAction } from '../utils/note-publish';
 import {
   getValidOpenAIOAuthSession,
   isOpenAIOAuthSessionActive,
@@ -128,15 +131,27 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
   }
 
   const latestPrompt = getLatestUserPrompt(messages);
-  const repoContext = await buildRepoContextForPrompt(latestPrompt, { reason: 'assistant-tool' });
-  const repoContextMessage = repoContext?.contextText
-    ? {
-      role: 'system',
-      content: `Use the following local repository context when it is relevant:\n\n${repoContext.contextText}`,
-    }
-    : null;
+  const shouldLoadRepoKnowledge = shouldUseRepoKnowledgeBase(latestPrompt);
+  const requireToolUse = shouldRequireToolUsage(latestPrompt);
+  const requestedSaveAction = parseSaveNotePromptAction(latestPrompt);
+
+  await logAgentEvent('chat', 'stream_started', {
+    provider: clientConfig.provider,
+    requireToolUse,
+    hasRepoKnowledge: shouldLoadRepoKnowledge,
+    hasSaveAction: !!requestedSaveAction,
+  });
 
   if (clientConfig.provider === 'oauth') {
+    const repoContext = shouldLoadRepoKnowledge
+      ? await buildRepoContextForPrompt(latestPrompt, { reason: 'assistant-tool' })
+      : null;
+    const repoContextMessage = repoContext?.contextText
+      ? {
+        role: 'system',
+        content: `Use the following local repository context when it is relevant:\n\n${repoContext.contextText}`,
+      }
+      : null;
     const session = await getOAuthSession();
     return streamOpenAIOAuthChat({
       session,
@@ -155,7 +170,18 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
 
   const systemMessages = [
     { role: 'system', content: NOTE_SYSTEM_PROMPT },
+    { role: 'system', content: getAgentToolSystemPrompt() },
   ];
+
+  const repoContext = shouldLoadRepoKnowledge
+    ? await buildRepoContextForPrompt(latestPrompt, { reason: 'assistant-tool' })
+    : null;
+  const repoContextMessage = repoContext?.contextText
+    ? {
+      role: 'system',
+      content: `Selected repository knowledge base:\n\n${repoContext.contextText}`,
+    }
+    : null;
 
   if (repoContextMessage) {
     systemMessages.push(repoContextMessage);
@@ -168,18 +194,89 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     });
   }
 
+  let resolvedMessages = [...systemMessages, ...messages];
+  let toolFallbackReason = '';
+
+  try {
+    resolvedMessages = await resolveManualToolMessages({
+      client,
+      model: clientConfig?.model || OPENAI_MODEL,
+      messages: resolvedMessages,
+      signal,
+      requireToolUse,
+    });
+    await logAgentEvent('tools', 'tool_orchestration_completed', {
+      requireToolUse,
+      usedDirectSaveFallback: false,
+    });
+  } catch (error) {
+    toolFallbackReason = error?.message || 'Tool execution is unavailable for the current provider.';
+    await logAgentEvent('tools', 'tool_orchestration_failed', {
+      error: toolFallbackReason,
+      requireToolUse,
+      hasSaveAction: !!requestedSaveAction,
+    });
+
+    if (requestedSaveAction) {
+      await logAgentEvent('tools', 'direct_save_fallback_requested', {
+        path: requestedSaveAction.path,
+        commitMessage: requestedSaveAction.commitMessage,
+      });
+
+      const result = await runAgentTool('save_note_to_repository', JSON.stringify(requestedSaveAction));
+      if (result.ok) {
+        await logAgentEvent('tools', 'direct_save_fallback_succeeded', {
+          path: result.data?.file?.path || requestedSaveAction.path,
+          commitSha: result.data?.publish?.commitSha || '',
+          remoteHeadSha: result.data?.publish?.remoteHeadSha || '',
+        });
+
+        const successText = [
+          `Saved note to \`${result.data?.file?.path || requestedSaveAction.path}\`.`,
+          `Committed and pushed to \`origin/main\` with commit \`${result.data?.publish?.commitSha || 'unknown'}\`.`,
+          result.data?.publish?.validatedRemote
+            ? `Remote verification passed: \`${result.data.publish.remoteHeadSha}\` is now the latest commit on \`origin/main\`.`
+            : 'Remote verification status is unavailable.',
+        ].join('\n\n');
+
+        onChunk?.(successText, successText);
+        return successText;
+      }
+
+      await logAgentEvent('tools', 'direct_save_fallback_failed', {
+        error: result.error || 'save_note_to_repository failed',
+        path: requestedSaveAction.path,
+      });
+
+      if (requireToolUse) {
+        const failureText = `I could not sync the current note because \`save_note_to_repository\` failed: ${result.error || 'unknown error'}`;
+        onChunk?.(failureText, failureText);
+        return failureText;
+      }
+    }
+
+    if (requireToolUse) {
+      systemMessages.push({
+        role: 'system',
+        content: 'Required repository tools were unavailable. You must not claim any save, edit, commit, push, or sync action succeeded. Explain that the requested action was not completed.',
+      });
+    }
+
+    resolvedMessages = [...systemMessages, ...messages];
+  }
+
   const requestedModel = normalizeModelLabel(clientConfig?.model || OPENAI_MODEL, OPENAI_MODEL);
   let usedModel = requestedModel;
   onMeta?.({
     provider: 'manual',
     requestedModel,
     usedModel,
-    fallbackReason: '',
+    fallbackReason: toolFallbackReason,
   });
 
   const stream = await client.chat.completions.create({
     model: clientConfig?.model || OPENAI_MODEL,
-    messages: [...systemMessages, ...messages],
+    messages: resolvedMessages,
     stream: true,
     temperature: 0.7,
     max_tokens: 4096,
@@ -195,7 +292,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
         provider: 'manual',
         requestedModel,
         usedModel,
-        fallbackReason: '',
+        fallbackReason: toolFallbackReason,
       });
     }
 
