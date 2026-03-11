@@ -537,11 +537,11 @@ export default function SettingsPanel({ isOpen, onClose }) {
                   <strong>{toolCatalog.length} tools available</strong>
                 </div>
                 <div className={`settings-oauth-badge ${form.openaiConnectionMethod === 'manual' ? 'success' : 'info'}`}>
-                  {form.openaiConnectionMethod === 'manual' ? 'Tool ready' : 'Fallback mode'}
+                  {form.openaiConnectionMethod === 'manual' ? 'Tool ready' : 'Tool routed'}
                 </div>
               </div>
               <p className="settings-helper-text">
-                Manual OpenAI-compatible providers can use the reusable tool registry for repository files, git inspection, sync, and GitHub context. OAuth mode keeps repo-aware assistance but does not force native tool calls.
+                Manual OpenAI-compatible providers use native tool calling. OpenAI sign-in uses the same reusable tool registry through Scribe-managed routing, so note lookup, save, move, delete, file inspection, and publish flows stay grounded in actual tool results.
               </p>
               <div className="settings-tool-groups">
                 {Object.entries(toolGroups).map(([category, tools]) => (

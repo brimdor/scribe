@@ -20,6 +20,13 @@ describe('github service', () => {
     expect(shouldUseRepoKnowledgeBase('What are my current note tags?')).toBe(true);
   });
 
+  it('treats note mutation prompts as grounded tool tasks', async () => {
+    const { shouldRequireToolUsage, shouldUseRepoKnowledgeBase } = await import('../github');
+
+    expect(shouldUseRepoKnowledgeBase('Rename the note in `Inbox/sprint-review.md` and publish it.')).toBe(true);
+    expect(shouldRequireToolUsage('Delete this journal note from the repository.')).toBe(true);
+  });
+
   it('posts to sync endpoint with override values', async () => {
     apiRequest.mockResolvedValueOnce({
       sync: {
@@ -166,6 +173,8 @@ describe('github service', () => {
   it('calls repository tool endpoints with structured parameters', async () => {
     apiRequest
       .mockResolvedValueOnce({ file: { path: 'notes/todo.md', created: true } })
+      .mockResolvedValueOnce({ file: { fromPath: 'notes/todo.md', path: 'archive/todo.md' } })
+      .mockResolvedValueOnce({ file: { path: 'archive/todo.md', deleted: true } })
       .mockResolvedValueOnce({ search: { results: [{ path: 'README.md' }] } })
       .mockResolvedValueOnce({ status: { clean: true } })
       .mockResolvedValueOnce({ diff: { hasChanges: false } })
@@ -181,6 +190,7 @@ describe('github service', () => {
       .mockResolvedValueOnce({ note: { path: 'Projects/Watchtower.md', frontmatter: { title: 'Watchtower' } } });
 
     const {
+      deleteLocalRepoFile,
       findLocalRepoNotesByTag,
       getLocalGitDiff,
       getLocalGitLog,
@@ -190,6 +200,7 @@ describe('github service', () => {
       publishRepoChanges,
       listRepoIssues,
       listRepoPullRequests,
+      moveLocalRepoFile,
       readLocalRepoNoteFrontmatter,
       saveNoteToRepoAndPublish,
       searchLocalRepoFiles,
@@ -197,6 +208,8 @@ describe('github service', () => {
     } = await import('../github');
 
     await writeLocalRepoFile({ filePath: 'notes/todo.md', content: 'hello' });
+    await moveLocalRepoFile({ fromPath: 'notes/todo.md', toPath: 'archive/todo.md' });
+    await deleteLocalRepoFile({ filePath: 'archive/todo.md' });
     await searchLocalRepoFiles({ query: 'readme', limit: 5 });
     await getLocalGitStatus();
     await getLocalGitDiff({ filePath: 'README.md' });
@@ -218,11 +231,22 @@ describe('github service', () => {
         createDirectories: true,
       },
     });
-    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/search?q=readme&limit=5');
-    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/github/repo/git/status');
-    expect(apiRequest).toHaveBeenNthCalledWith(4, '/api/github/repo/git/diff?path=README.md');
-    expect(apiRequest).toHaveBeenNthCalledWith(5, '/api/github/repo/git/log?limit=5');
-    expect(apiRequest).toHaveBeenNthCalledWith(6, '/api/github/publish', {
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/file', {
+      method: 'PATCH',
+      body: {
+        fromPath: 'notes/todo.md',
+        toPath: 'archive/todo.md',
+        createDirectories: true,
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/github/repo/file?path=archive%2Ftodo.md', {
+      method: 'DELETE',
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(4, '/api/github/repo/search?q=readme&limit=5');
+    expect(apiRequest).toHaveBeenNthCalledWith(5, '/api/github/repo/git/status');
+    expect(apiRequest).toHaveBeenNthCalledWith(6, '/api/github/repo/git/diff?path=README.md');
+    expect(apiRequest).toHaveBeenNthCalledWith(7, '/api/github/repo/git/log?limit=5');
+    expect(apiRequest).toHaveBeenNthCalledWith(8, '/api/github/publish', {
       method: 'POST',
       body: {
         reason: 'manual-publish',
@@ -230,15 +254,15 @@ describe('github service', () => {
         commitMessage: 'sync notes from Scribe',
       },
     });
-    expect(apiRequest).toHaveBeenNthCalledWith(7, '/api/github/repo/file', {
+    expect(apiRequest).toHaveBeenNthCalledWith(9, '/api/github/repo/file', {
       method: 'PUT',
       body: {
-        path: 'Projects/Scribe.md',
+        path: 'Projects/scribe.md',
         content: '# Scribe',
         createDirectories: true,
       },
     });
-    expect(apiRequest).toHaveBeenNthCalledWith(8, '/api/github/publish', {
+    expect(apiRequest).toHaveBeenNthCalledWith(10, '/api/github/publish', {
       method: 'POST',
       body: {
         reason: 'save-note-and-publish',
@@ -246,11 +270,136 @@ describe('github service', () => {
         commitMessage: 'publish note',
       },
     });
-    expect(apiRequest).toHaveBeenNthCalledWith(9, '/api/github/issues');
-    expect(apiRequest).toHaveBeenNthCalledWith(10, '/api/github/pulls');
-    expect(apiRequest).toHaveBeenNthCalledWith(11, '/api/github/repo/note-tags');
-    expect(apiRequest).toHaveBeenNthCalledWith(12, '/api/github/repo/notes?limit=10');
-    expect(apiRequest).toHaveBeenNthCalledWith(13, '/api/github/repo/notes/by-tag?tag=project&limit=5');
-    expect(apiRequest).toHaveBeenNthCalledWith(14, '/api/github/repo/note/frontmatter?path=Projects%2FWatchtower.md');
+    expect(apiRequest).toHaveBeenNthCalledWith(11, '/api/github/issues');
+    expect(apiRequest).toHaveBeenNthCalledWith(12, '/api/github/pulls');
+    expect(apiRequest).toHaveBeenNthCalledWith(13, '/api/github/repo/note-tags');
+    expect(apiRequest).toHaveBeenNthCalledWith(14, '/api/github/repo/notes?limit=10');
+    expect(apiRequest).toHaveBeenNthCalledWith(15, '/api/github/repo/notes/by-tag?tag=project&limit=5');
+    expect(apiRequest).toHaveBeenNthCalledWith(16, '/api/github/repo/note/frontmatter?path=Projects%2FWatchtower.md');
+  });
+
+  it('remaps note publish paths to existing vault directories', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        tree: {
+          dir: '',
+          entries: [
+            { type: 'dir', name: 'Inbox', path: 'Inbox' },
+            { type: 'dir', name: 'Journal', path: 'Journal' },
+            { type: 'dir', name: 'Projects', path: 'Projects' },
+            { type: 'dir', name: 'Resources', path: 'Resources' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ file: { path: 'Inbox/scribe.md', created: true } })
+      .mockResolvedValueOnce({ publish: { status: 'published', branch: 'main', stagedFiles: ['Inbox/scribe.md'] } });
+
+    const { saveNoteToRepoAndPublish } = await import('../github');
+    const result = await saveNoteToRepoAndPublish({ filePath: 'Notes/My rough draft.md', content: '# Scribe', commitMessage: 'publish note' });
+
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/github/repo/tree?limit=200');
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/file', {
+      method: 'PUT',
+      body: {
+        path: 'Inbox/scribe.md',
+        content: '# Scribe',
+        createDirectories: true,
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/github/publish', {
+      method: 'POST',
+      body: {
+        reason: 'save-note-and-publish',
+        filePaths: ['Inbox/scribe.md'],
+        commitMessage: 'publish note',
+      },
+    });
+    expect(result.file.path).toBe('Inbox/scribe.md');
+  });
+
+  it('rejects non-markdown note publish paths', async () => {
+    const { saveNoteToRepoAndPublish } = await import('../github');
+
+    await expect(saveNoteToRepoAndPublish({
+      filePath: 'Projects/scribe.txt',
+      content: '# Scribe',
+      commitMessage: 'publish note',
+    })).rejects.toThrow(/markdown files/i);
+
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('moves a note using canonical markdown naming and publishes the change', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ file: { path: 'Inbox/sprint-review-notes.md', content: '# Sprint Review Notes\n' } })
+      .mockResolvedValueOnce({ tree: { dir: '', entries: [{ type: 'dir', name: 'Inbox', path: 'Inbox' }] } })
+      .mockResolvedValueOnce({ file: { fromPath: 'Inbox/rough.md', path: 'Inbox/sprint-review-notes.md' } })
+      .mockResolvedValueOnce({ publish: { status: 'published', branch: 'main', stagedFiles: ['Inbox/rough.md', 'Inbox/sprint-review-notes.md'] } });
+
+    const { moveNoteInRepoAndPublish } = await import('../github');
+    const result = await moveNoteInRepoAndPublish({
+      fromPath: 'Inbox/rough.md',
+      toPath: 'Notes/not-final.txt',
+      commitMessage: 'rename note',
+    });
+
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/github/repo/file?path=Inbox%2Frough.md&maxBytes=24576&maxLines=180');
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/tree?limit=200');
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/github/repo/file', {
+      method: 'PATCH',
+      body: {
+        fromPath: 'Inbox/rough.md',
+        toPath: 'Inbox/sprint-review-notes.md',
+        createDirectories: true,
+      },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(4, '/api/github/publish', {
+      method: 'POST',
+      body: {
+        reason: 'move-note-and-publish',
+        filePaths: ['Inbox/rough.md', 'Inbox/sprint-review-notes.md'],
+        commitMessage: 'rename note',
+      },
+    });
+    expect(result.file.path).toBe('Inbox/sprint-review-notes.md');
+  });
+
+  it('deletes a markdown note and publishes the removal', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ file: { path: 'Inbox/old-note.md', deleted: true } })
+      .mockResolvedValueOnce({ publish: { status: 'published', branch: 'main', stagedFiles: ['Inbox/old-note.md'] } });
+
+    const { deleteNoteFromRepoAndPublish } = await import('../github');
+    const result = await deleteNoteFromRepoAndPublish({
+      filePath: 'Inbox/old-note.md',
+      commitMessage: 'delete note',
+    });
+
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/github/repo/file?path=Inbox%2Fold-note.md', {
+      method: 'DELETE',
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/publish', {
+      method: 'POST',
+      body: {
+        reason: 'delete-note-and-publish',
+        filePaths: ['Inbox/old-note.md'],
+        commitMessage: 'delete note',
+      },
+    });
+    expect(result.file.deleted).toBe(true);
+  });
+
+  it('rejects non-markdown note move and delete paths', async () => {
+    const { deleteNoteFromRepoAndPublish, moveNoteInRepoAndPublish } = await import('../github');
+
+    await expect(moveNoteInRepoAndPublish({
+      fromPath: 'Inbox/rough.txt',
+      toPath: 'Inbox/final.md',
+    })).rejects.toThrow(/markdown files/i);
+    await expect(deleteNoteFromRepoAndPublish({
+      filePath: 'Inbox/old-note.txt',
+    })).rejects.toThrow(/markdown files/i);
+
+    expect(apiRequest).not.toHaveBeenCalled();
   });
 });

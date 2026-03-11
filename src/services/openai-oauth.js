@@ -718,8 +718,19 @@ export async function quickOpenAIOAuthChat({ session, prompt, model }) {
     model,
     messages: [{ role: 'user', content: prompt }],
     schemaContext: null,
-    stream: false,
+    stream: true,
   });
 
   return response.text;
+}
+
+export async function completeOpenAIOAuthChat({ session, model, messages, schemaContext = null, signal } = {}) {
+  return createCodexResponse({
+    session,
+    model,
+    messages,
+    schemaContext,
+    signal,
+    stream: true,
+  });
 }

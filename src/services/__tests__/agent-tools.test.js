@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const deleteNoteFromRepoAndPublish = vi.fn();
 const getLocalGitDiff = vi.fn();
 const getLocalGitLog = vi.fn();
 const getLocalGitStatus = vi.fn();
@@ -7,6 +8,7 @@ const findLocalRepoNotesByTag = vi.fn();
 const listLocalRepoTree = vi.fn();
 const listLocalRepoNoteTags = vi.fn();
 const listLocalRepoNotes = vi.fn();
+const moveNoteInRepoAndPublish = vi.fn();
 const publishRepoChanges = vi.fn();
 const listRepoIssues = vi.fn();
 const listRepoPullRequests = vi.fn();
@@ -18,6 +20,7 @@ const syncAssignedRepo = vi.fn();
 const writeLocalRepoFile = vi.fn();
 
 vi.mock('../github', () => ({
+  deleteNoteFromRepoAndPublish,
   getLocalGitDiff,
   getLocalGitLog,
   getLocalGitStatus,
@@ -25,6 +28,7 @@ vi.mock('../github', () => ({
   listLocalRepoTree,
   listLocalRepoNoteTags,
   listLocalRepoNotes,
+  moveNoteInRepoAndPublish,
   publishRepoChanges,
   listRepoIssues,
   listRepoPullRequests,
@@ -39,6 +43,7 @@ vi.mock('../github', () => ({
 describe('agent tools service', () => {
   beforeEach(() => {
     vi.resetModules();
+    deleteNoteFromRepoAndPublish.mockReset();
     getLocalGitDiff.mockReset();
     getLocalGitLog.mockReset();
     getLocalGitStatus.mockReset();
@@ -46,6 +51,7 @@ describe('agent tools service', () => {
     listLocalRepoTree.mockReset();
     listLocalRepoNoteTags.mockReset();
     listLocalRepoNotes.mockReset();
+    moveNoteInRepoAndPublish.mockReset();
     publishRepoChanges.mockReset();
     listRepoIssues.mockReset();
     listRepoPullRequests.mockReset();
@@ -70,6 +76,8 @@ describe('agent tools service', () => {
     expect(toolNames).toContain('read_note_frontmatter');
     expect(toolNames).toContain('publish_repository_changes');
     expect(toolNames).toContain('save_note_to_repository');
+    expect(toolNames).toContain('move_note_in_repository');
+    expect(toolNames).toContain('delete_note_from_repository');
     expect(toolNames).toContain('get_git_status');
     expect(toolNames).toContain('list_github_pull_requests');
     expect(getManualToolDefinitions()).toHaveLength(catalog.length);
@@ -136,7 +144,7 @@ describe('agent tools service', () => {
     });
 
     expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls[0][0].tools).toHaveLength(16);
+    expect(create.mock.calls[0][0].tools).toHaveLength(18);
     expect(create.mock.calls[0][0].tool_choice).toBe('auto');
     expect(messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant' }),
@@ -223,5 +231,44 @@ describe('agent tools service', () => {
       createDirectories: true,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('executes note move and delete tools with publish steps', async () => {
+    moveNoteInRepoAndPublish.mockResolvedValueOnce({
+      file: { fromPath: 'Inbox/rough.md', path: 'Inbox/final.md' },
+      publish: { status: 'published' },
+    });
+    deleteNoteFromRepoAndPublish.mockResolvedValueOnce({
+      file: { path: 'Inbox/final.md', deleted: true },
+      publish: { status: 'published' },
+    });
+
+    const { runAgentTool } = await import('../agent-tools');
+    const moveResult = await runAgentTool('move_note_in_repository', JSON.stringify({
+      fromPath: 'Inbox/rough.md',
+      toPath: 'Inbox/final.md',
+      commitMessage: 'rename note',
+    }));
+    const deleteResult = await runAgentTool('delete_note_from_repository', JSON.stringify({
+      path: 'Inbox/final.md',
+      commitMessage: 'delete note',
+    }));
+
+    expect(moveNoteInRepoAndPublish).toHaveBeenCalledWith({
+      owner: undefined,
+      repo: undefined,
+      fromPath: 'Inbox/rough.md',
+      toPath: 'Inbox/final.md',
+      commitMessage: 'rename note',
+      createDirectories: true,
+    });
+    expect(deleteNoteFromRepoAndPublish).toHaveBeenCalledWith({
+      owner: undefined,
+      repo: undefined,
+      filePath: 'Inbox/final.md',
+      commitMessage: 'delete note',
+    });
+    expect(moveResult.ok).toBe(true);
+    expect(deleteResult.ok).toBe(true);
   });
 });

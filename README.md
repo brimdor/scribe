@@ -58,6 +58,8 @@ Available tool categories:
   - `find_notes_by_tag`
   - `read_note_frontmatter`
   - `save_note_to_repository`
+  - `move_note_in_repository`
+  - `delete_note_from_repository`
 - `Git`
   - `sync_repository` (refresh/pull only)
   - `publish_repository_changes`
@@ -72,7 +74,8 @@ Tooling behavior:
 
 - Tool definitions live in one shared registry: `src/services/agent-tools.js`.
 - The manual OpenAI-compatible provider flow resolves tool calls before the final streamed answer.
-- OAuth mode keeps repo-aware assistance but does not force the native tool-calling path.
+- OAuth mode uses Scribe-managed tool routing so repo and note tasks can still execute against the shared tool suite even when provider-native tool calling is unavailable.
+- Note management now covers grounded note lookup, save, move/rename, and delete flows against the assigned repository.
 - Tool failures are non-fatal and fall back to the best available context.
 - When native tool-calling is weak or unavailable, Scribe now does a best-effort selected-repo knowledge-base lookup for note/repo/file questions.
 - The system prompt now explicitly tells the agent that it must use tools for current repo/note/git/GitHub questions when those tools are relevant.
@@ -141,6 +144,7 @@ Install dependencies:
 
 ```bash
 npm install
+npx playwright install chromium
 ```
 
 Start the web app and API together:
@@ -209,8 +213,7 @@ Important backend routes include:
 - `POST /api/github/sync`
 - `POST /api/github/publish`
 - `GET /api/github/repo/tree`
-- `GET /api/github/repo/file`
-- `PUT /api/github/repo/file`
+- `GET|PUT|PATCH|DELETE /api/github/repo/file`
 - `GET /api/github/repo/search`
 - `GET /api/github/repo/notes`
 - `GET /api/github/repo/notes/by-tag`
@@ -259,15 +262,16 @@ Run these before shipping changes:
 ```bash
 npm run lint
 npm run test
+npm run test:e2e
 npm run build
 ```
 
 ## Current Limitations
 
-- Native tool orchestration is currently wired into the manual OpenAI-compatible provider flow.
-- OAuth mode remains repo-aware but does not force native tool calls.
+- Manual OpenAI-compatible providers use native tool orchestration.
+- OAuth mode uses Scribe-managed tool routing for note and repository tasks, then falls back to repo context when tool routing is unavailable.
 - The tool suite focuses on safe inspection and text-file mutation, not commit/push/merge automation.
-- Browser E2E coverage is still limited compared with unit and service-level coverage.
+- Browser E2E coverage now includes Playwright-driven login, repo-aware chat, OAuth tool-routing, and publish-note flows, but it is still narrower than the full unit/service suite.
 
 ## Related Docs
 
