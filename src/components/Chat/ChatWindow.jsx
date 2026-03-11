@@ -11,7 +11,7 @@ const SUGGESTIONS = [
   { icon: '🗂️', title: 'Project Plan', desc: 'Outline a new project', prompt: 'Create a project plan for a new initiative' },
 ];
 
-export default function ChatWindow({ threadId, activeSchema, onSendSuggestion }) {
+export default function ChatWindow({ threadId }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [streaming, setStreaming] = useState(false);

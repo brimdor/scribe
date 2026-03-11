@@ -531,6 +531,83 @@ export function writeRepoFileForUser({
   };
 }
 
+export function moveRepoFileForUser({
+  userId,
+  username,
+  owner,
+  repo,
+  fromPath,
+  toPath,
+  createDirectories = true,
+}) {
+  const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
+  ensureAssignedRepo(target);
+
+  const source = resolveWithinRepo(target.repoPath, fromPath, 'Source path', { allowEmpty: false });
+  const destination = resolveWithinRepo(target.repoPath, toPath, 'Destination path', { allowEmpty: false });
+
+  if (source.normalizedPath === destination.normalizedPath) {
+    throw new Error('Destination path must be different from the source path.');
+  }
+
+  if (!fs.existsSync(source.absolutePath)) {
+    throw new Error(`Source path does not exist: ${source.normalizedPath}`);
+  }
+
+  const sourceStat = fs.statSync(source.absolutePath);
+  if (!sourceStat.isFile()) {
+    throw new Error(`Source path is not a regular file: ${source.normalizedPath}`);
+  }
+
+  const parentDir = path.dirname(destination.absolutePath);
+  if (!fs.existsSync(parentDir)) {
+    if (!createDirectories) {
+      throw new Error(`Parent directory does not exist for destination path: ${destination.normalizedPath}`);
+    }
+
+    fs.mkdirSync(parentDir, { recursive: true });
+  }
+
+  const existed = fs.existsSync(destination.absolutePath);
+  if (existed && !fs.statSync(destination.absolutePath).isFile()) {
+    throw new Error(`Destination path is not a regular file: ${destination.normalizedPath}`);
+  }
+
+  fs.renameSync(source.absolutePath, destination.absolutePath);
+
+  return {
+    ...buildToolTarget(target),
+    fromPath: source.normalizedPath,
+    path: destination.normalizedPath,
+    overwritten: existed,
+    message: 'Repository file moved successfully.',
+  };
+}
+
+export function deleteRepoFileForUser({ userId, username, owner, repo, filePath }) {
+  const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
+  ensureAssignedRepo(target);
+
+  const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, filePath, 'File path', { allowEmpty: false });
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`File path does not exist: ${normalizedPath}`);
+  }
+
+  const stat = fs.statSync(absolutePath);
+  if (!stat.isFile()) {
+    throw new Error(`File path is not a regular file: ${normalizedPath}`);
+  }
+
+  fs.unlinkSync(absolutePath);
+
+  return {
+    ...buildToolTarget(target),
+    path: normalizedPath,
+    deleted: true,
+    message: 'Repository file deleted successfully.',
+  };
+}
+
 export function listRepoNoteTagsForUser({ userId, username, owner, repo }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
   ensureAssignedRepo(target);

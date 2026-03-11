@@ -200,7 +200,7 @@ export async function publishRepoChangesForUser({
     : [];
 
   if (normalizedPaths.length) {
-    await runGitCommand(['-C', assignment.repoPath, 'add', '--', ...normalizedPaths]);
+    await runGitCommand(['-C', assignment.repoPath, 'add', '-A', '--', ...normalizedPaths]);
   } else {
     await runGitCommand(['-C', assignment.repoPath, 'add', '-A']);
   }

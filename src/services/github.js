@@ -1,4 +1,5 @@
 import { apiRequest } from './api';
+import { isMarkdownPath, resolveNoteSavePath } from '../utils/note-publish';
 
 const REPO_FRESHNESS_HINT_PATTERN = /\b(git\s+pull|sync|refresh|latest|up[-\s]?to[-\s]?date|recent|newest)\b/i;
 const REPO_CONTEXT_HINT_PATTERN = /\b(repo|repository|branch|commit|file|files|codebase|source|readme|notes|folder|directory|path)\b/i;
@@ -11,9 +12,15 @@ const DEFAULT_FILE_BYTES = 24 * 1024;
 const DEFAULT_FILE_LINES = 180;
 const MAX_CONTEXT_FILES = 3;
 const MAX_CONTEXT_CHARS = 12_000;
-const REPO_KNOWLEDGE_HINT_PATTERN = /\b(note|notes|tag|tags|markdown|obsidian|wikilink|frontmatter|repo|repository|readme|document|documents|file|files|folder|directory|search|find|summari[sz]e|what\s+are|list|show|edit|update|create|write)\b/i;
+const REPO_KNOWLEDGE_HINT_PATTERN = /\b(note|notes|tag|tags|markdown|obsidian|wikilink|frontmatter|repo|repository|readme|document|documents|file|files|folder|directory|search|find|summari[sz]e|what\s+are|list|show|edit|update|create|write|rename|retitle|move|relocate|delete|remove|archive|publish|sync|commit|push)\b/i;
 const TAG_HINT_PATTERN = /\btag|tags|tagging\b/i;
 const NOTE_HINT_PATTERN = /\b(note|notes|markdown|obsidian|frontmatter|wikilink|journal|project|daily note|meeting note)\b/i;
+const NOTE_MANAGEMENT_HINT_PATTERN = /\b(rename|retitle|move|relocate|delete|remove|archive|organize|publish|sync|commit|push)\b/i;
+const NOTE_DIRECTORY_ALIASES = {
+  Notes: ['Inbox'],
+  Research: ['Resources'],
+  Meetings: ['Inbox'],
+};
 
 function buildPathWithQuery(basePath, params) {
   const query = params.toString();
@@ -57,6 +64,44 @@ function formatFileSnippet(file) {
     file.content,
     '```',
   ].join('\n');
+}
+
+async function resolvePublishPath({ owner, repo, filePath }) {
+  const normalizedPath = String(filePath || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalizedPath) {
+    return normalizedPath;
+  }
+
+  const segments = normalizedPath.split('/').filter(Boolean);
+  if (segments.length < 2) {
+    return normalizedPath;
+  }
+
+  const [topLevelDir, ...rest] = segments;
+  const aliasDirs = NOTE_DIRECTORY_ALIASES[topLevelDir] || [];
+  if (!aliasDirs.length) {
+    return normalizedPath;
+  }
+
+  try {
+    const tree = await listLocalRepoTree({ owner, repo, limit: 200 });
+    const availableDirs = new Set((tree?.entries || [])
+      .filter((entry) => entry.type === 'dir')
+      .map((entry) => entry.name));
+
+    if (availableDirs.has(topLevelDir)) {
+      return normalizedPath;
+    }
+
+    const replacementDir = aliasDirs.find((candidate) => availableDirs.has(candidate));
+    if (!replacementDir) {
+      return normalizedPath;
+    }
+
+    return [replacementDir, ...rest].join('/');
+  } catch {
+    return normalizedPath;
+  }
 }
 
 export function initGitHub() {
@@ -199,6 +244,52 @@ export async function writeLocalRepoFile({ owner, repo, filePath, content, creat
   const response = await apiRequest('/api/github/repo/file', {
     method: 'PUT',
     body: payload,
+  });
+
+  return response.file;
+}
+
+export async function moveLocalRepoFile({ owner, repo, fromPath, toPath, createDirectories = true } = {}) {
+  const payload = {
+    fromPath: String(fromPath || '').trim(),
+    toPath: String(toPath || '').trim(),
+    createDirectories: createDirectories !== false,
+  };
+
+  if (typeof owner === 'string' && owner.trim()) {
+    payload.owner = owner.trim();
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    payload.repo = repo.trim();
+  }
+
+  const response = await apiRequest('/api/github/repo/file', {
+    method: 'PATCH',
+    body: payload,
+  });
+
+  return response.file;
+}
+
+export async function deleteLocalRepoFile({ owner, repo, filePath } = {}) {
+  const params = new URLSearchParams();
+
+  if (typeof owner === 'string' && owner.trim()) {
+    params.set('owner', owner.trim());
+  }
+
+  if (typeof repo === 'string' && repo.trim()) {
+    params.set('repo', repo.trim());
+  }
+
+  if (!filePath || !String(filePath).trim()) {
+    throw new Error('File path is required.');
+  }
+
+  params.set('path', String(filePath).trim());
+  const response = await apiRequest(buildPathWithQuery('/api/github/repo/file', params), {
+    method: 'DELETE',
   });
 
   return response.file;
@@ -379,11 +470,23 @@ export async function readLocalRepoNoteFrontmatter({ owner, repo, filePath } = {
 }
 
 export async function saveNoteToRepoAndPublish({ owner, repo, filePath, content, commitMessage = '', createDirectories = true } = {}) {
+  const normalizedContent = String(content || '');
+  const preferredPath = String(filePath || '').trim();
+  if (!normalizedContent.trim()) {
+    throw new Error('Markdown note content is required.');
+  }
+
+  if (preferredPath && !isMarkdownPath(preferredPath)) {
+    throw new Error('Notes can only be saved as markdown files.');
+  }
+
+  const canonicalPath = resolveNoteSavePath(normalizedContent, preferredPath);
+  const resolvedPath = await resolvePublishPath({ owner, repo, filePath: canonicalPath });
   const written = await writeLocalRepoFile({
     owner,
     repo,
-    filePath,
-    content,
+    filePath: resolvedPath,
+    content: normalizedContent,
     createDirectories,
   });
 
@@ -401,6 +504,67 @@ export async function saveNoteToRepoAndPublish({ owner, repo, filePath, content,
   };
 }
 
+export async function moveNoteInRepoAndPublish({ owner, repo, fromPath, toPath, commitMessage = '', createDirectories = true } = {}) {
+  const sourcePath = String(fromPath || '').trim();
+  if (!sourcePath) {
+    throw new Error('Source note path is required.');
+  }
+
+  if (!isMarkdownPath(sourcePath)) {
+    throw new Error('Notes can only be moved as markdown files.');
+  }
+
+  const sourceNote = await readLocalRepoFile({ owner, repo, filePath: sourcePath });
+  const preferredPath = String(toPath || '').trim() || sourcePath;
+  const canonicalPath = resolveNoteSavePath(sourceNote.content, preferredPath);
+  const resolvedPath = await resolvePublishPath({ owner, repo, filePath: canonicalPath });
+  const moved = await moveLocalRepoFile({
+    owner,
+    repo,
+    fromPath: sourcePath,
+    toPath: resolvedPath,
+    createDirectories,
+  });
+
+  const publish = await publishRepoChanges({
+    owner,
+    repo,
+    filePaths: [sourcePath, moved.path],
+    commitMessage,
+    reason: 'move-note-and-publish',
+  });
+
+  return {
+    file: moved,
+    publish,
+  };
+}
+
+export async function deleteNoteFromRepoAndPublish({ owner, repo, filePath, commitMessage = '' } = {}) {
+  const normalizedPath = String(filePath || '').trim();
+  if (!normalizedPath) {
+    throw new Error('Note path is required.');
+  }
+
+  if (!isMarkdownPath(normalizedPath)) {
+    throw new Error('Notes can only be deleted as markdown files.');
+  }
+
+  const deleted = await deleteLocalRepoFile({ owner, repo, filePath: normalizedPath });
+  const publish = await publishRepoChanges({
+    owner,
+    repo,
+    filePaths: [deleted.path],
+    commitMessage,
+    reason: 'delete-note-and-publish',
+  });
+
+  return {
+    file: deleted,
+    publish,
+  };
+}
+
 export function shouldUseRepoKnowledgeBase(prompt = '') {
   const normalized = String(prompt || '').trim();
   if (!normalized) {
@@ -408,6 +572,7 @@ export function shouldUseRepoKnowledgeBase(prompt = '') {
   }
 
   return shouldRunRepoSyncTool(normalized)
+    || (NOTE_MANAGEMENT_HINT_PATTERN.test(normalized) && NOTE_HINT_PATTERN.test(normalized))
     || REPO_KNOWLEDGE_HINT_PATTERN.test(normalized)
     || extractPromptFilePaths(normalized).length > 0;
 }
@@ -418,7 +583,7 @@ export function shouldRequireToolUsage(prompt = '') {
     return false;
   }
 
-  return shouldUseRepoKnowledgeBase(normalized) || /\b(edit|update|rewrite|create|write|modify|save|sync|publish|commit|push)\b/i.test(normalized);
+  return shouldUseRepoKnowledgeBase(normalized) || /\b(edit|update|rewrite|create|write|modify|save|sync|publish|commit|push|rename|retitle|move|relocate|delete|remove|archive)\b/i.test(normalized);
 }
 
 function extractPromptTags(prompt = '') {

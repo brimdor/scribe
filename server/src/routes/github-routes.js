@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { appendEventLog } from '../services/event-log.js';
 import { createGitHubClient } from '../services/github-auth.js';
 import {
+  deleteRepoFileForUser,
   findRepoNotesByTagForUser,
   getRepoGitDiffForUser,
   getRepoGitLogForUser,
@@ -10,6 +11,7 @@ import {
   listRepoNotesForUser,
   listRepoTreeForUser,
   listRepoNoteTagsForUser,
+  moveRepoFileForUser,
   readRepoNoteFrontmatterForUser,
   readRepoFileForUser,
   searchRepoFilesForUser,
@@ -179,6 +181,46 @@ router.put('/repo/file', async (req, res) => {
     const message = error?.message || 'Unable to write repository file.';
     const isBadRequest = /required|invalid path segment|resolves outside|no repository assignment|binary file|parent directory/i.test(message);
     const isNotFound = /does not exist|not available|not a folder|not a regular file|checkout is invalid/i.test(message);
+    res.status(isBadRequest ? 400 : isNotFound ? 404 : 500).json({ error: message });
+  }
+});
+
+router.patch('/repo/file', async (req, res) => {
+  try {
+    const file = moveRepoFileForUser({
+      userId: req.auth.userId,
+      username: req.auth.user.login,
+      owner: req.body?.owner,
+      repo: req.body?.repo,
+      fromPath: req.body?.fromPath,
+      toPath: req.body?.toPath,
+      createDirectories: req.body?.createDirectories,
+    });
+
+    res.status(200).json({ file });
+  } catch (error) {
+    const message = error?.message || 'Unable to move repository file.';
+    const isBadRequest = /required|invalid path segment|resolves outside|no repository assignment|parent directory|destination path must/i.test(message);
+    const isNotFound = /does not exist|not available|not a regular file|checkout is invalid/i.test(message);
+    res.status(isBadRequest ? 400 : isNotFound ? 404 : 500).json({ error: message });
+  }
+});
+
+router.delete('/repo/file', async (req, res) => {
+  try {
+    const file = deleteRepoFileForUser({
+      userId: req.auth.userId,
+      username: req.auth.user.login,
+      owner: req.query.owner,
+      repo: req.query.repo,
+      filePath: req.query.path,
+    });
+
+    res.status(200).json({ file });
+  } catch (error) {
+    const message = error?.message || 'Unable to delete repository file.';
+    const isBadRequest = /required|invalid path segment|resolves outside|no repository assignment/i.test(message);
+    const isNotFound = /does not exist|not available|not a regular file|checkout is invalid/i.test(message);
     res.status(isBadRequest ? 400 : isNotFound ? 404 : 500).json({ error: message });
   }
 });

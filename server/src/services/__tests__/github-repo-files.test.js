@@ -178,6 +178,44 @@ describe('github repo files service', () => {
     expect(note.tags).toEqual(expect.arrayContaining(['project', 'homelab', 'ops']));
   });
 
+  it('moves and deletes repository files safely', async () => {
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    initRepo(repoPath);
+    fs.mkdirSync(path.join(repoPath, 'Inbox'), { recursive: true });
+    fs.mkdirSync(path.join(repoPath, 'Archive'), { recursive: true });
+    fs.writeFileSync(path.join(repoPath, 'Inbox', 'draft-note.md'), '# Draft\n', 'utf8');
+    fs.writeFileSync(path.join(repoPath, 'Inbox', 'delete-me.md'), '# Delete\n', 'utf8');
+
+    const {
+      deleteRepoFileForUser,
+      moveRepoFileForUser,
+    } = await import('../github-repo-files.js');
+
+    const moved = moveRepoFileForUser({
+      userId: 'user-1',
+      username: 'brimdor',
+      fromPath: 'Inbox/draft-note.md',
+      toPath: 'Archive/draft-note.md',
+    });
+    const deleted = deleteRepoFileForUser({
+      userId: 'user-1',
+      username: 'brimdor',
+      filePath: 'Inbox/delete-me.md',
+    });
+
+    expect(moved).toEqual(expect.objectContaining({
+      fromPath: 'Inbox/draft-note.md',
+      path: 'Archive/draft-note.md',
+    }));
+    expect(fs.existsSync(path.join(repoPath, 'Inbox', 'draft-note.md'))).toBe(false);
+    expect(fs.existsSync(path.join(repoPath, 'Archive', 'draft-note.md'))).toBe(true);
+    expect(deleted).toEqual(expect.objectContaining({
+      path: 'Inbox/delete-me.md',
+      deleted: true,
+    }));
+    expect(fs.existsSync(path.join(repoPath, 'Inbox', 'delete-me.md'))).toBe(false);
+  });
+
   it('rejects path traversal when reading files', async () => {
     const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
     initRepo(repoPath);

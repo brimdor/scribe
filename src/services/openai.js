@@ -1,15 +1,18 @@
 import OpenAI from 'openai';
 import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
-import { getAgentToolSystemPrompt, resolveManualToolMessages, runAgentTool } from './agent-tools';
+import { getAgentToolPromptCatalog, getAgentToolSystemPrompt, resolveManualToolMessages, runAgentTool } from './agent-tools';
 import { logAgentEvent } from './debug';
 import { buildRepoContextForPrompt, getLatestUserPrompt, shouldRequireToolUsage, shouldUseRepoKnowledgeBase } from './github';
-import { parseSaveNotePromptAction } from '../utils/note-publish';
+import { isMarkdownPath, parseSaveNotePromptAction, resolveNoteSavePath } from '../utils/note-publish';
 import {
+  completeOpenAIOAuthChat,
   getValidOpenAIOAuthSession,
   isOpenAIOAuthSessionActive,
   quickOpenAIOAuthChat,
   streamOpenAIOAuthChat,
 } from './openai-oauth';
+
+const OAUTH_TOOL_ROUND_LIMIT = 6;
 
 let client = null;
 let clientConfig = null;
@@ -22,6 +25,221 @@ function dispatchOAuthSessionUpdate(session) {
   window.dispatchEvent(new CustomEvent('scribe:openai-oauth-session', {
     detail: { session },
   }));
+}
+
+function normalizeRepoPath(value) {
+  const normalized = String(value || '').trim().replace(/^['"`]+|['"`]+$/g, '');
+  if (!normalized || normalized.includes('..') || normalized.startsWith('/')) {
+    return '';
+  }
+
+  const withForwardSlashes = normalized.replace(/\\/g, '/');
+  return withForwardSlashes;
+}
+
+function extractPathFromSelectionResponse(text = '') {
+  const normalized = String(text || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const candidates = [];
+
+  try {
+    const parsed = JSON.parse(normalized);
+    if (parsed && typeof parsed === 'object') {
+      candidates.push(parsed.path);
+    }
+  } catch {
+    // Ignore JSON parsing failures and continue with regex extraction.
+  }
+
+  const jsonPathMatch = normalized.match(/"path"\s*:\s*"([^"]+\.md)"/i);
+  if (jsonPathMatch?.[1]) {
+    candidates.push(jsonPathMatch[1]);
+  }
+
+  const fencedPathMatch = normalized.match(/```(?:json|text)?\n([\s\S]*?)\n```/i);
+  if (fencedPathMatch?.[1]) {
+    candidates.push(fencedPathMatch[1]);
+  }
+
+  const plainPathMatch = normalized.match(/\b(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.md\b/);
+  if (plainPathMatch?.[0]) {
+    candidates.push(plainPathMatch[0]);
+  }
+
+  for (const candidate of candidates) {
+    const resolved = normalizeRepoPath(candidate);
+    if (isMarkdownPath(resolved)) {
+      return resolved;
+    }
+  }
+
+  return '';
+}
+
+async function collectManualResponseText({ messages, temperature = 0.2, maxTokens = 200, signal = null } = {}) {
+  if (!client) {
+    return '';
+  }
+
+  const stream = await client.chat.completions.create({
+    model: clientConfig?.model || OPENAI_MODEL,
+    messages,
+    stream: true,
+    temperature,
+    max_tokens: maxTokens,
+    store: false,
+  }, { signal });
+
+  let fullText = '';
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content || '';
+    if (delta) {
+      fullText += delta;
+    }
+  }
+
+  return fullText;
+}
+
+function formatOAuthToolTranscript(messages, toolEvents = []) {
+  const conversationLines = messages.map((message) => {
+    const role = String(message?.role || 'user').toUpperCase();
+    return `[${role}]\n${String(message?.content || '').trim()}`;
+  });
+
+  const toolLines = toolEvents.flatMap((event) => {
+    const lines = [];
+    if (event?.call) {
+      lines.push(`[ASSISTANT_TOOL_CALL]\n${JSON.stringify(event.call, null, 2)}`);
+    }
+    if (event?.result) {
+      lines.push(`[TOOL_RESULT]\n${JSON.stringify(event.result, null, 2)}`);
+    }
+    return lines;
+  });
+
+  return [...conversationLines, ...toolLines].filter(Boolean).join('\n\n');
+}
+
+function extractJsonBlock(text = '') {
+  const normalized = String(text || '').trim();
+  if (!normalized) {
+    throw new Error('Empty tool-routing response.');
+  }
+
+  const fencedMatch = normalized.match(/```(?:json)?\n([\s\S]*?)\n```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBrace = normalized.indexOf('{');
+  const lastBrace = normalized.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return normalized.slice(firstBrace, lastBrace + 1);
+  }
+
+  return normalized;
+}
+
+function parseOAuthToolPlannerResponse(text = '') {
+  let parsed;
+  try {
+    parsed = JSON.parse(extractJsonBlock(text));
+  } catch {
+    throw new Error('OAuth tool planner returned invalid JSON.');
+  }
+
+  if (parsed?.type === 'final' && typeof parsed.message === 'string') {
+    return {
+      type: 'final',
+      message: parsed.message.trim(),
+    };
+  }
+
+  if (parsed?.type === 'tool_calls' && Array.isArray(parsed.calls) && parsed.calls.length) {
+    return {
+      type: 'tool_calls',
+      calls: parsed.calls
+        .filter((call) => typeof call?.name === 'string' && call.name.trim())
+        .map((call) => ({
+          name: call.name.trim(),
+          arguments: call.arguments && typeof call.arguments === 'object' ? call.arguments : {},
+        })),
+    };
+  }
+
+  throw new Error('OAuth tool planner returned an unsupported response shape.');
+}
+
+async function resolveOAuthToolResponse({ session, model, messages, signal = null, requireToolUse = false, onMeta = null } = {}) {
+  const toolCatalog = JSON.stringify(getAgentToolPromptCatalog(), null, 2);
+  const toolEvents = [];
+  let usedAnyTools = false;
+  let latestMeta = {
+    provider: 'oauth',
+    requestedModel: model?.trim() || 'auto',
+    usedModel: model?.trim() || 'auto',
+    fallbackReason: '',
+  };
+
+  for (let round = 0; round < OAUTH_TOOL_ROUND_LIMIT; round += 1) {
+    const plannerPrompt = [
+      'You are Scribe\'s tool router for repository, git, GitHub, and markdown note tasks.',
+      'Decide whether the next step should be tool calls or a final grounded answer.',
+      'Return strict JSON only with one of these shapes:',
+      '{"type":"tool_calls","calls":[{"name":"tool_name","arguments":{}}]}',
+      '{"type":"final","message":"grounded answer text"}',
+      requireToolUse && !usedAnyTools
+        ? 'You must call at least one tool before returning a final answer.'
+        : 'Return a final answer only when the available tool results already support it.',
+      'Never claim a repository save, note publish, commit, push, sync, or edit succeeded unless the tool result confirms it.',
+      'Use `save_note_to_repository` only for markdown notes that should be saved and published immediately.',
+      'Use `move_note_in_repository` for markdown note renames or moves that should be published immediately.',
+      'Use `delete_note_from_repository` for markdown note deletions that should be published immediately.',
+      'If the user asks to edit or create a repository file without an immediate publish, use `write_repository_file` and then `publish_repository_changes` only if the user asked to commit/push/publish.',
+      `Available tools:\n${toolCatalog}`,
+      `Conversation and tool transcript:\n\n${formatOAuthToolTranscript(messages, toolEvents)}`,
+    ].join('\n\n');
+
+    const response = await completeOpenAIOAuthChat({
+      session,
+      model,
+      messages: [{ role: 'user', content: plannerPrompt }],
+      signal,
+    });
+
+    latestMeta = {
+      provider: 'oauth',
+      requestedModel: response.requestedModel || latestMeta.requestedModel,
+      usedModel: response.model || latestMeta.usedModel,
+      fallbackReason: response.fallbackReason || latestMeta.fallbackReason || '',
+    };
+    onMeta?.(latestMeta);
+
+    const decision = parseOAuthToolPlannerResponse(response.text);
+    if (decision.type === 'final') {
+      if (requireToolUse && !usedAnyTools) {
+        throw new Error('The configured OAuth model did not use the required repository tools.');
+      }
+
+      return {
+        text: decision.message,
+        meta: latestMeta,
+      };
+    }
+
+    usedAnyTools = true;
+
+    for (const call of decision.calls) {
+      const result = await runAgentTool(call.name, JSON.stringify(call.arguments || {}));
+      toolEvents.push({ call, result });
+    }
+  }
+
+  throw new Error('OAuth tool call limit reached before the model produced a final answer.');
 }
 
 export function resolveOpenAIConfig(config = {}) {
@@ -108,6 +326,103 @@ async function getOAuthSession() {
   return refreshedSession;
 }
 
+async function chooseSavePath(requestedSaveAction) {
+  const explicitPath = normalizeRepoPath(requestedSaveAction?.path);
+  if (explicitPath) {
+    return resolveNoteSavePath(requestedSaveAction?.content || '', explicitPath);
+  }
+
+  const pathHint = normalizeRepoPath(requestedSaveAction?.pathHint);
+  const routingPrompt = 'Choose the best repository-relative markdown path for saving this note. Review the repository folders, existing notes, tags, and schema cues. Return JSON only in the form {"path":"Folder/file.md"}.';
+  const repoContext = await buildRepoContextForPrompt(routingPrompt, { reason: 'assistant-tool' });
+  const selectionPrompt = [
+    'Choose the best repository-relative markdown path for this note and return JSON only.',
+    'Rules: use an existing top-level folder when appropriate, keep the filename as markdown, prefer lowercase kebab-case based on the note title, and prefer the repo\'s real structure over the path hint when they differ.',
+    pathHint ? `Path hint: ${pathHint}` : '',
+    repoContext?.contextText ? `Repository context:\n\n${repoContext.contextText}` : 'Repository context is unavailable.',
+    'Note markdown:',
+    '```markdown',
+    requestedSaveAction?.content || '',
+    '```',
+  ].filter(Boolean).join('\n\n');
+
+  if (clientConfig?.provider === 'oauth') {
+    const session = await getOAuthSession();
+    const responseText = await quickOpenAIOAuthChat({
+      session,
+      prompt: selectionPrompt,
+      model: clientConfig.model,
+    });
+    return resolveNoteSavePath(requestedSaveAction?.content || '', extractPathFromSelectionResponse(responseText) || pathHint);
+  }
+
+  if (client) {
+    const responseText = await collectManualResponseText({
+      messages: [
+        {
+          role: 'system',
+          content: 'You choose repository-relative markdown paths for notes. Return JSON only in the form {"path":"Folder/file.md"}.',
+        },
+        {
+          role: 'user',
+          content: selectionPrompt,
+        },
+      ],
+      temperature: 0.1,
+      maxTokens: 200,
+    });
+    return resolveNoteSavePath(requestedSaveAction?.content || '', extractPathFromSelectionResponse(responseText) || pathHint);
+  }
+
+  return resolveNoteSavePath(requestedSaveAction?.content || '', pathHint);
+}
+
+async function runDirectSaveAction(requestedSaveAction, onChunk) {
+  const resolvedPath = await chooseSavePath(requestedSaveAction);
+  if (!resolvedPath) {
+    return {
+      ok: false,
+      error: 'Could not determine a repository path for this note.',
+    };
+  }
+
+  const result = await runAgentTool('save_note_to_repository', JSON.stringify({
+    ...requestedSaveAction,
+    path: resolvedPath,
+  }));
+  if (result.ok) {
+    await logAgentEvent('tools', 'direct_save_fallback_succeeded', {
+      path: result.data?.file?.path || resolvedPath,
+      commitSha: result.data?.publish?.commitSha || '',
+      remoteHeadSha: result.data?.publish?.remoteHeadSha || '',
+    });
+
+    const successText = [
+      `Saved note to \`${result.data?.file?.path || resolvedPath}\`.`,
+      `Committed and pushed to \`origin/main\` with commit \`${result.data?.publish?.commitSha || 'unknown'}\`.`,
+      result.data?.publish?.validatedRemote
+        ? `Remote verification passed: \`${result.data.publish.remoteHeadSha}\` is now the latest commit on \`origin/main\`.`
+        : 'Remote verification status is unavailable.',
+    ].join('\n\n');
+
+    onChunk?.(successText, successText);
+    return {
+      ok: true,
+      text: successText,
+    };
+  }
+
+  await logAgentEvent('tools', 'direct_save_fallback_failed', {
+    error: result.error || 'save_note_to_repository failed',
+    path: resolvedPath,
+  });
+
+  return {
+    ok: false,
+    error: result.error || 'save_note_to_repository failed',
+  };
+}
+
 export function normalizeGeneratedTitle(title) {
   return title?.trim().replace(/^['"`]+|['"`]+$/g, '').replace(/\s+/g, ' ').trim() || '';
 }
@@ -143,6 +458,44 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
   });
 
   if (clientConfig.provider === 'oauth') {
+    if (requestedSaveAction) {
+      await logAgentEvent('tools', 'direct_save_fallback_requested', {
+        path: requestedSaveAction.path,
+        commitMessage: requestedSaveAction.commitMessage,
+      });
+
+      const saveResult = await runDirectSaveAction(requestedSaveAction, onChunk);
+      if (saveResult.ok) {
+        return saveResult.text;
+      }
+
+      const failureText = `I could not sync the current note because \`save_note_to_repository\` failed: ${saveResult.error}`;
+      onChunk?.(failureText, failureText);
+      return failureText;
+    }
+
+    if (shouldLoadRepoKnowledge || requireToolUse) {
+      try {
+        const session = await getOAuthSession();
+        const toolResponse = await resolveOAuthToolResponse({
+          session,
+          model: clientConfig.model,
+          messages,
+          signal,
+          requireToolUse,
+          onMeta,
+        });
+        onChunk?.(toolResponse.text, toolResponse.text);
+        return toolResponse.text;
+      } catch (error) {
+        await logAgentEvent('tools', 'oauth_tool_orchestration_failed', {
+          error: error?.message || 'OAuth tool orchestration failed.',
+          requireToolUse,
+          hasRepoKnowledge: shouldLoadRepoKnowledge,
+        });
+      }
+    }
+
     const repoContext = shouldLoadRepoKnowledge
       ? await buildRepoContextForPrompt(latestPrompt, { reason: 'assistant-tool' })
       : null;
@@ -153,7 +506,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
       }
       : null;
     const session = await getOAuthSession();
-    return streamOpenAIOAuthChat({
+      return streamOpenAIOAuthChat({
       session,
       model: clientConfig.model,
       messages: repoContextMessage ? [repoContextMessage, ...messages] : messages,
@@ -166,6 +519,24 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
 
   if (!client) {
     throw new Error('OpenAI client not initialized. Please configure your agent settings.');
+  }
+
+  if (requestedSaveAction) {
+    await logAgentEvent('tools', 'direct_save_fallback_requested', {
+      path: requestedSaveAction.path || requestedSaveAction.pathHint,
+      commitMessage: requestedSaveAction.commitMessage,
+    });
+
+    const saveResult = await runDirectSaveAction(requestedSaveAction, onChunk);
+    if (saveResult.ok) {
+      return saveResult.text;
+    }
+
+    if (requireToolUse) {
+      const failureText = `I could not sync the current note because \`save_note_to_repository\` failed: ${saveResult.error}`;
+      onChunk?.(failureText, failureText);
+      return failureText;
+    }
   }
 
   const systemMessages = [
@@ -223,33 +594,13 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
         commitMessage: requestedSaveAction.commitMessage,
       });
 
-      const result = await runAgentTool('save_note_to_repository', JSON.stringify(requestedSaveAction));
-      if (result.ok) {
-        await logAgentEvent('tools', 'direct_save_fallback_succeeded', {
-          path: result.data?.file?.path || requestedSaveAction.path,
-          commitSha: result.data?.publish?.commitSha || '',
-          remoteHeadSha: result.data?.publish?.remoteHeadSha || '',
-        });
-
-        const successText = [
-          `Saved note to \`${result.data?.file?.path || requestedSaveAction.path}\`.`,
-          `Committed and pushed to \`origin/main\` with commit \`${result.data?.publish?.commitSha || 'unknown'}\`.`,
-          result.data?.publish?.validatedRemote
-            ? `Remote verification passed: \`${result.data.publish.remoteHeadSha}\` is now the latest commit on \`origin/main\`.`
-            : 'Remote verification status is unavailable.',
-        ].join('\n\n');
-
-        onChunk?.(successText, successText);
-        return successText;
+      const saveResult = await runDirectSaveAction(requestedSaveAction, onChunk);
+      if (saveResult.ok) {
+        return saveResult.text;
       }
 
-      await logAgentEvent('tools', 'direct_save_fallback_failed', {
-        error: result.error || 'save_note_to_repository failed',
-        path: requestedSaveAction.path,
-      });
-
       if (requireToolUse) {
-        const failureText = `I could not sync the current note because \`save_note_to_repository\` failed: ${result.error || 'unknown error'}`;
+        const failureText = `I could not sync the current note because \`save_note_to_repository\` failed: ${saveResult.error}`;
         onChunk?.(failureText, failureText);
         return failureText;
       }

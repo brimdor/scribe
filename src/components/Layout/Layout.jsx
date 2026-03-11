@@ -73,7 +73,6 @@ export default function Layout() {
         <ChatWindow
           key={refreshKey}
           threadId={activeThreadId}
-          activeSchema={activeSchema}
         />
         <InputConsole
           threadId={activeThreadId}

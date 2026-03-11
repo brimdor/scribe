@@ -1,5 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+function createEventStreamResponse(payloads) {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      payloads.forEach((payload) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      });
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+
+  return {
+    ok: true,
+    body,
+  };
+}
+
 describe('openai oauth service', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -161,12 +179,10 @@ describe('openai oauth service', () => {
   });
 
   it('omits unsupported agent-mode model when using codex responses', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        output_text: 'ok',
-      }),
-    }));
+    const fetchMock = vi.fn(async () => createEventStreamResponse([
+      { type: 'response.output_text.delta', delta: 'ok', model: 'gpt-5' },
+      { type: 'response.completed', response: { output_text: 'ok', model: 'gpt-5' } },
+    ]));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -183,6 +199,7 @@ describe('openai oauth service', () => {
     expect(result).toBe('ok');
     const request = fetchMock.mock.calls[0];
     const payload = JSON.parse(request[1].body);
+    expect(payload.stream).toBe(true);
     expect(payload.model).toBeUndefined();
   });
 
@@ -217,10 +234,10 @@ describe('openai oauth service', () => {
         status: 400,
         text: async () => JSON.stringify({ detail: "The 'None' model is not supported when using Codex with a ChatGPT account." }),
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ output_text: 'fallback works' }),
-      });
+      .mockResolvedValueOnce(createEventStreamResponse([
+        { type: 'response.output_text.delta', delta: 'fallback works', model: 'gpt-5' },
+        { type: 'response.completed', response: { output_text: 'fallback works', model: 'gpt-5' } },
+      ]));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -240,7 +257,33 @@ describe('openai oauth service', () => {
     const firstPayload = JSON.parse(fetchMock.mock.calls[0][1].body);
     const secondPayload = JSON.parse(fetchMock.mock.calls[1][1].body);
 
+    expect(secondPayload.stream).toBe(true);
     expect(firstPayload.model).toBeUndefined();
     expect(secondPayload.model).toBe('gpt-5');
+  });
+
+  it('streams complete oauth chat helper responses for planner-style calls', async () => {
+    const fetchMock = vi.fn(async () => createEventStreamResponse([
+      { type: 'response.output_text.delta', delta: '{"type":"final",', model: 'gpt-5.4' },
+      { type: 'response.output_text.delta', delta: '"message":"done"}', model: 'gpt-5.4' },
+      { type: 'response.completed', response: { output_text: '{"type":"final","message":"done"}', model: 'gpt-5.4' } },
+    ]));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { completeOpenAIOAuthChat } = await import('../openai-oauth');
+    const response = await completeOpenAIOAuthChat({
+      session: {
+        accessToken: 'access-token',
+        accountId: '',
+      },
+      model: 'gpt-5.4',
+      messages: [{ role: 'user', content: 'planner' }],
+    });
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(payload.stream).toBe(true);
+    expect(response.text).toBe('{"type":"final","message":"done"}');
+    expect(response.model).toBe('gpt-5.4');
   });
 });

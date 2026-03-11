@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildSaveNotePrompt, inferNotePathFromContent, isLikelySavableNote, parseSaveNotePromptAction } from '../note-publish';
+import {
+  buildSaveNotePrompt,
+  inferNotePathFromContent,
+  isLikelySavableNote,
+  isMarkdownPath,
+  parseSaveNotePromptAction,
+  resolveNoteSavePath,
+} from '../note-publish';
 
 describe('note publish utilities', () => {
   it('infers a project note path from markdown frontmatter', () => {
@@ -32,12 +39,26 @@ describe('note publish utilities', () => {
     expect(inferNotePathFromContent(content)).toBe('Journal/2026-03-10.md');
   });
 
+  it('normalizes save paths to title-based markdown filenames', () => {
+    const content = '# Sprint Review Notes\n\nDiscuss launch blockers and owners.';
+
+    expect(resolveNoteSavePath(content, 'Inbox/My rough draft.txt')).toBe('Inbox/sprint-review-notes.md');
+    expect(resolveNoteSavePath(content, 'Inbox/custom-name.md')).toBe('Inbox/sprint-review-notes.md');
+  });
+
+  it('detects markdown-only note paths', () => {
+    expect(isMarkdownPath('Projects/scribe.md')).toBe(true);
+    expect(isMarkdownPath('Projects/scribe.txt')).toBe(false);
+    expect(isMarkdownPath('../Projects/scribe.md')).toBe(false);
+  });
+
   it('builds a publish prompt that explicitly targets the save tool', () => {
     const content = '# Scribe\n\nCurrent project notes.';
     const prompt = buildSaveNotePrompt(content, { filePath: 'Projects/scribe.md' });
 
     expect(prompt).toContain('save_note_to_repository');
     expect(prompt).toContain('[SCRIBE_ACTION]');
+    expect(prompt).toContain('Suggested path hint: `Projects/scribe.md`');
     expect(prompt).toContain('Projects/scribe.md');
     expect(prompt).toContain('```markdown');
   });
@@ -47,7 +68,8 @@ describe('note publish utilities', () => {
     const prompt = buildSaveNotePrompt(content, { filePath: 'Projects/scribe.md', commitMessage: 'save note: Scribe' });
 
     expect(parseSaveNotePromptAction(prompt)).toEqual({
-      path: 'Projects/scribe.md',
+      path: '',
+      pathHint: 'Projects/scribe.md',
       commitMessage: 'save note: Scribe',
       content,
     });

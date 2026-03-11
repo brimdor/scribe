@@ -1,4 +1,5 @@
 import {
+  deleteNoteFromRepoAndPublish,
   findLocalRepoNotesByTag,
   getLocalGitDiff,
   getLocalGitLog,
@@ -6,6 +7,7 @@ import {
   listLocalRepoNotes,
   listLocalRepoTree,
   listLocalRepoNoteTags,
+  moveNoteInRepoAndPublish,
   publishRepoChanges,
   listRepoIssues,
   listRepoPullRequests,
@@ -199,7 +201,7 @@ const TOOL_DEFINITIONS = [
     name: 'save_note_to_repository',
     category: 'Notes',
     exposure: 'manual-provider',
-    description: 'Write a markdown note into the selected repository and immediately commit and push it to main.',
+    description: 'Write a markdown note into the selected repository, normalize it to the project note path and filename conventions, and immediately commit and push it to main.',
     parameters: {
       type: 'object',
       required: ['path', 'content'],
@@ -220,6 +222,56 @@ const TOOL_DEFINITIONS = [
       content,
       commitMessage,
       createDirectories,
+    }),
+  },
+  {
+    name: 'move_note_in_repository',
+    category: 'Notes',
+    exposure: 'manual-provider',
+    description: 'Move or rename a markdown note inside the selected repository, normalize the destination to the project note path and filename conventions, and immediately commit and push it to main.',
+    parameters: {
+      type: 'object',
+      required: ['fromPath', 'toPath'],
+      properties: {
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        fromPath: { type: 'string', description: 'Current repository-relative markdown note path.' },
+        toPath: { type: 'string', description: 'Requested repository-relative markdown note destination.' },
+        commitMessage: { type: 'string', description: 'Commit message for the note move.' },
+        createDirectories: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+    execute: async ({ owner, repo, fromPath, toPath, commitMessage = '', createDirectories = true } = {}) => moveNoteInRepoAndPublish({
+      owner,
+      repo,
+      fromPath,
+      toPath,
+      commitMessage,
+      createDirectories,
+    }),
+  },
+  {
+    name: 'delete_note_from_repository',
+    category: 'Notes',
+    exposure: 'manual-provider',
+    description: 'Delete a markdown note from the selected repository and immediately commit and push the removal to main.',
+    parameters: {
+      type: 'object',
+      required: ['path'],
+      properties: {
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        path: { type: 'string', description: 'Repository-relative markdown note path to delete.' },
+        commitMessage: { type: 'string', description: 'Commit message for the note deletion.' },
+      },
+      additionalProperties: false,
+    },
+    execute: async ({ owner, repo, path, commitMessage = '' } = {}) => deleteNoteFromRepoAndPublish({
+      owner,
+      repo,
+      filePath: path,
+      commitMessage,
     }),
   },
   {
@@ -377,6 +429,15 @@ export function getAgentToolCatalog() {
   }));
 }
 
+export function getAgentToolPromptCatalog() {
+  return TOOL_DEFINITIONS.map(({ name, category, description, parameters }) => ({
+    name,
+    category,
+    description,
+    parameters,
+  }));
+}
+
 export function getAgentToolSystemPrompt() {
   const toolNames = TOOL_DEFINITIONS.map((tool) => tool.name).join(', ');
   return [
@@ -385,6 +446,9 @@ export function getAgentToolSystemPrompt() {
     'You must use the available tools whenever the user asks about current notes, tags, files, repository contents, git state, or GitHub collaboration state.',
     'In Scribe, syncing current notes means saving the markdown file to the selected repository, creating a git commit, and pushing that commit to the remote main branch.',
     'If the user asks to save, sync, publish, commit, or push notes to GitHub, you must use save_note_to_repository or write_repository_file followed by publish_repository_changes.',
+    'If the user asks to move, rename, relocate, archive, or delete a note in the repository, you must use move_note_in_repository or delete_note_from_repository so the change is committed and pushed.',
+    'save_note_to_repository is for markdown notes only and should keep filenames aligned to the note title format unless a date-based schema applies.',
+    'move_note_in_repository and delete_note_from_repository are for markdown notes only.',
     'sync_repository only refreshes local state from GitHub; it does not publish local edits.',
     'Never claim a file was saved, committed, or pushed unless the corresponding tool result confirms success.',
     'Prefer tools over guessing for note tags, note lists, frontmatter, file contents, git status, diffs, commit history, issues, and pull requests.',
