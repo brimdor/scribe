@@ -1,30 +1,37 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { ApiError } from '../services/api';
-import { getCurrentSession, loginWithGitHub, logoutSession } from '../services/auth';
-import { getSetting, setSetting } from '../services/storage';
+import { loginWithGitHub, logoutSession } from '../services/auth';
+import { getBootstrapData, saveBootstrapData } from '../services/storage';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [selectedRepo, setSelectedRepoState] = useState(null);
+  const [bootstrap, setBootstrap] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const loadBootstrap = useCallback(async () => {
+    const payload = await getBootstrapData();
+    setBootstrap(payload);
+    setUser(payload.user);
+    setSelectedRepoState(payload.selectedRepo || null);
+    return payload;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
     const hydrate = async () => {
       try {
-        const sessionUser = await getCurrentSession();
+        const payload = await getBootstrapData();
         if (!mounted) {
           return;
         }
 
-        setUser(sessionUser);
-        const repo = await getSetting('selectedRepo');
-        if (mounted) {
-          setSelectedRepoState(repo || null);
-        }
+        setBootstrap(payload);
+        setUser(payload.user);
+        setSelectedRepoState(payload.selectedRepo || null);
       } catch (error) {
         if (!mounted) {
           return;
@@ -33,6 +40,7 @@ export function AuthProvider({ children }) {
         if (!(error instanceof ApiError && error.status === 401)) {
           console.error('Failed to load auth session:', error);
         }
+        setBootstrap(null);
         setUser(null);
         setSelectedRepoState(null);
       } finally {
@@ -55,13 +63,10 @@ export function AuthProvider({ children }) {
     }
 
     const sessionUser = await loginWithGitHub(username, githubToken);
-    setUser(sessionUser);
-
-    const repo = await getSetting('selectedRepo');
-    setSelectedRepoState(repo || null);
+    await loadBootstrap();
 
     return sessionUser;
-  }, []);
+  }, [loadBootstrap]);
 
   const logout = useCallback(async () => {
     try {
@@ -72,21 +77,25 @@ export function AuthProvider({ children }) {
 
     setUser(null);
     setSelectedRepoState(null);
+    setBootstrap(null);
   }, []);
 
   const selectRepo = useCallback(async (repo) => {
-    setSelectedRepoState(repo);
-    await setSetting('selectedRepo', repo);
+    const payload = await saveBootstrapData({ selectedRepo: repo });
+    setBootstrap(payload);
+    setSelectedRepoState(payload.selectedRepo || null);
   }, []);
 
   const value = {
     user,
     selectedRepo,
+    bootstrap,
     loading,
     isAuthenticated: !!user,
     login,
     logout,
     selectRepo,
+    refreshBootstrap: loadBootstrap,
   };
 
   return (

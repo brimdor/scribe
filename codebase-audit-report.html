@@ -443,9 +443,9 @@
           </p>
         </article>
 
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity medium">Medium</span>
-          <h3>7. Settings bootstrap and persistence are chatty and non-atomic</h3>
+          <h3>7. Settings bootstrap and persistence are chatty and non-atomic <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: startup latency and consistency</p>
           <p>
             Settings reads and writes fan out into many independent calls. This increases round-trips and makes partial save states more likely.

@@ -82,6 +82,72 @@ function createFetchMock() {
       }
     }
 
+    if (path === '/api/storage/bootstrap') {
+      if (method === 'GET') {
+        return jsonResponse(200, {
+          user: { id: 'user-1', login: 'brimdor' },
+          selectedRepo: settingsStore.get('selectedRepo') || null,
+          settings: {
+            environmentName: settingsStore.get('environmentName') || '',
+            githubOwner: settingsStore.get('githubOwner') || '',
+            githubRepo: settingsStore.get('githubRepo') || '',
+            openaiConnectionMethod: settingsStore.get('openaiConnectionMethod') || 'manual',
+            agentBaseUrl: settingsStore.get('agentBaseUrl') || '',
+            agentApiKey: '',
+            agentApiKeyConfigured: Boolean(settingsStore.get('agentApiKey')),
+            agentModel: settingsStore.get('agentModel') || '',
+          },
+          openAIOAuthSession: settingsStore.get('openaiOAuthSession') || null,
+          openAIOAuthPendingFlow: settingsStore.get('openaiOAuthPendingFlow') || null,
+        });
+      }
+
+      if (method === 'PUT') {
+        if (body.settings) {
+          settingsStore.set('environmentName', body.settings.environmentName || '');
+          settingsStore.set('githubOwner', body.settings.githubOwner || '');
+          settingsStore.set('githubRepo', body.settings.githubRepo || '');
+          settingsStore.set('openaiConnectionMethod', body.settings.openaiConnectionMethod || 'manual');
+          settingsStore.set('agentBaseUrl', body.settings.agentBaseUrl || '');
+          settingsStore.set('agentModel', body.settings.agentModel || '');
+          if (body.settings.clearAgentApiKey) {
+            settingsStore.set('agentApiKey', '');
+          } else if (typeof body.settings.agentApiKey === 'string' && body.settings.agentApiKey.trim()) {
+            settingsStore.set('agentApiKey', body.settings.agentApiKey.trim());
+          }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'selectedRepo')) {
+          settingsStore.set('selectedRepo', body.selectedRepo ?? null);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'openAIOAuthSession')) {
+          settingsStore.set('openaiOAuthSession', body.openAIOAuthSession ?? null);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'openAIOAuthPendingFlow')) {
+          settingsStore.set('openaiOAuthPendingFlow', body.openAIOAuthPendingFlow ?? null);
+        }
+
+        return jsonResponse(200, {
+          user: { id: 'user-1', login: 'brimdor' },
+          selectedRepo: settingsStore.get('selectedRepo') || null,
+          settings: {
+            environmentName: settingsStore.get('environmentName') || '',
+            githubOwner: settingsStore.get('githubOwner') || '',
+            githubRepo: settingsStore.get('githubRepo') || '',
+            openaiConnectionMethod: settingsStore.get('openaiConnectionMethod') || 'manual',
+            agentBaseUrl: settingsStore.get('agentBaseUrl') || '',
+            agentApiKey: '',
+            agentApiKeyConfigured: Boolean(settingsStore.get('agentApiKey')),
+            agentModel: settingsStore.get('agentModel') || '',
+          },
+          openAIOAuthSession: settingsStore.get('openaiOAuthSession') || null,
+          openAIOAuthPendingFlow: settingsStore.get('openaiOAuthPendingFlow') || null,
+        });
+      }
+    }
+
     if (path.startsWith('/api/storage/settings/')) {
       const key = decodeURIComponent(path.replace('/api/storage/settings/', ''));
       if (method === 'GET') {
@@ -211,6 +277,50 @@ describe('storage service', () => {
       startedAt: 67890,
       returnPath: '/settings',
     });
+  });
+
+  it('loads and saves bootstrap data in one payload', async () => {
+    const { getBootstrapData, saveBootstrapData } = await import('../storage');
+
+    const saved = await saveBootstrapData({
+      selectedRepo: { owner: 'brimdor', repo: 'scribe' },
+      settings: {
+        environmentName: ' Local ',
+        openaiConnectionMethod: 'oauth',
+      },
+      openAIOAuthSession: {
+        status: 'connected',
+        accessToken: ' access ',
+        refreshToken: ' refresh ',
+        expiresAt: 123,
+      },
+      openAIOAuthPendingFlow: {
+        type: 'device',
+        deviceAuthId: ' device ',
+        userCode: ' code ',
+        startedAt: 456,
+      },
+    });
+
+    expect(saved).toEqual(expect.objectContaining({
+      user: { id: 'user-1', login: 'brimdor' },
+      selectedRepo: { owner: 'brimdor', repo: 'scribe' },
+      settings: expect.objectContaining({
+        environmentName: 'Local',
+        openaiConnectionMethod: 'oauth',
+      }),
+      openAIOAuthSession: expect.objectContaining({
+        accessToken: 'access',
+        refreshToken: 'refresh',
+      }),
+      openAIOAuthPendingFlow: expect.objectContaining({
+        type: 'device',
+        deviceAuthId: 'device',
+        userCode: 'code',
+      }),
+    }));
+
+    await expect(getBootstrapData()).resolves.toEqual(saved);
   });
 
   it('updates thread titles and refreshes updatedAt timestamps', async () => {

@@ -14,6 +14,16 @@ export const DEFAULT_APP_SETTINGS = {
 const OPENAI_OAUTH_SESSION_KEY = 'openaiOAuthSession';
 const OPENAI_OAUTH_PENDING_FLOW_KEY = 'openaiOAuthPendingFlow';
 
+function normalizeBootstrapPayload(payload = {}) {
+  return {
+    user: payload.user || null,
+    selectedRepo: payload.selectedRepo || null,
+    settings: normalizeAppSettings(payload.settings),
+    openAIOAuthSession: normalizeOpenAIOAuthSession(payload.openAIOAuthSession),
+    openAIOAuthPendingFlow: normalizeOpenAIOAuthPendingFlow(payload.openAIOAuthPendingFlow),
+  };
+}
+
 function isAuthError(error) {
   return error instanceof ApiError && error.status === 401;
 }
@@ -123,6 +133,19 @@ export async function setSetting(key, value) {
     method: 'PUT',
     body: { value },
   });
+}
+
+export async function getBootstrapData() {
+  const response = await apiRequest('/api/storage/bootstrap');
+  return normalizeBootstrapPayload(response);
+}
+
+export async function saveBootstrapData(payload) {
+  const response = await apiRequest('/api/storage/bootstrap', {
+    method: 'PUT',
+    body: payload,
+  });
+  return normalizeBootstrapPayload(response);
 }
 
 export function normalizeAppSettings(settings = {}) {

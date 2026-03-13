@@ -1,14 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  clearOpenAIOAuthPendingFlow,
-  clearOpenAIOAuthSession,
   DEFAULT_APP_SETTINGS,
-  getAppSettings,
-  getOpenAIOAuthPendingFlow,
-  getOpenAIOAuthSession,
-  saveAppSettings,
-  saveOpenAIOAuthPendingFlow,
-  saveOpenAIOAuthSession,
+  saveBootstrapData,
 } from '../services/storage';
 import {
   completeOpenAIOAuthCallback,
@@ -22,7 +15,7 @@ import { useAuth } from './AuthContext';
 const SettingsContext = createContext(null);
 
 export function SettingsProvider({ children }) {
-  const { isAuthenticated } = useAuth();
+  const { bootstrap, isAuthenticated } = useAuth();
   const [settings, setSettings] = useState(DEFAULT_APP_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -56,36 +49,23 @@ export function SettingsProvider({ children }) {
 
     setLoading(true);
 
-    Promise.all([
-      getAppSettings(),
-      getOpenAIOAuthSession(),
-      getOpenAIOAuthPendingFlow(),
-    ])
-      .then(([storedSettings, storedSession, storedPendingFlow]) => {
-        if (!mounted) {
-          return;
-        }
-
-        setSettings(storedSettings);
-        setOpenAIOAuthSession(storedSession);
-        setOpenAIOAuthPendingFlow(storedPendingFlow);
-      })
-      .finally(() => {
-        if (mounted) {
-          setLoading(false);
-        }
-      });
+    if (mounted) {
+      setSettings(bootstrap?.settings || DEFAULT_APP_SETTINGS);
+      setOpenAIOAuthSession(bootstrap?.openAIOAuthSession || null);
+      setOpenAIOAuthPendingFlow(bootstrap?.openAIOAuthPendingFlow || null);
+      setLoading(false);
+    }
 
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated]);
+  }, [bootstrap, isAuthenticated]);
 
   useEffect(() => {
     const handleSessionUpdate = async (event) => {
       const nextSession = event.detail?.session || null;
-      const saved = await saveOpenAIOAuthSession(nextSession);
-      setOpenAIOAuthSession(saved);
+      const payload = await saveBootstrapData({ openAIOAuthSession: nextSession });
+      setOpenAIOAuthSession(payload.openAIOAuthSession);
     };
 
     window.addEventListener('scribe:openai-oauth-session', handleSessionUpdate);
@@ -93,9 +73,9 @@ export function SettingsProvider({ children }) {
   }, []);
 
   const persistSettings = useCallback(async (nextSettings) => {
-    const savedSettings = await saveAppSettings(nextSettings);
-    setSettings(savedSettings);
-    return savedSettings;
+    const payload = await saveBootstrapData({ settings: nextSettings });
+    setSettings(payload.settings);
+    return payload.settings;
   }, []);
 
   useEffect(() => {
@@ -112,14 +92,19 @@ export function SettingsProvider({ children }) {
       let savedSettings = null;
 
       if (nextSession) {
-        savedSession = await saveOpenAIOAuthSession(nextSession);
-        savedSettings = await persistSettings({
-          ...settingsRef.current,
-          openaiConnectionMethod: 'oauth',
+        const payload = await saveBootstrapData({
+          openAIOAuthSession: nextSession,
+          openAIOAuthPendingFlow: null,
+          settings: {
+            ...settingsRef.current,
+            openaiConnectionMethod: 'oauth',
+          },
         });
+        savedSession = payload.openAIOAuthSession;
+        savedSettings = payload.settings;
+      } else {
+        await saveBootstrapData({ openAIOAuthPendingFlow: null });
       }
-
-      await clearOpenAIOAuthPendingFlow();
 
       if (cancelled) {
         return;
@@ -177,7 +162,7 @@ export function SettingsProvider({ children }) {
       }
       devicePollingRef.current = false;
     };
-  }, [openAIOAuthPendingFlow, persistSettings]);
+  }, [openAIOAuthPendingFlow]);
 
   useEffect(() => {
     if (settings.openaiConnectionMethod !== 'oauth' || !openAIOAuthSession || openAIOAuthSession.status !== 'connected') {
@@ -233,8 +218,8 @@ export function SettingsProvider({ children }) {
         returnPath: `${window.location.pathname}${window.location.search}${window.location.hash}`,
       });
 
-      const savedPendingFlow = await saveOpenAIOAuthPendingFlow(pendingFlow);
-      setOpenAIOAuthPendingFlow(savedPendingFlow);
+      const payload = await saveBootstrapData({ openAIOAuthPendingFlow: pendingFlow });
+      setOpenAIOAuthPendingFlow(payload.openAIOAuthPendingFlow);
       setOpenAIOAuthMessage('Finish the OpenAI sign-in in your browser. Scribe will connect automatically once you approve it.');
 
       if (authWindow && !authWindow.closed) {
@@ -254,21 +239,21 @@ export function SettingsProvider({ children }) {
   const disconnectOpenAI = useCallback(async () => {
     setOAuthBusy(true);
     const wasConnecting = !!openAIOAuthPendingFlow;
-    await Promise.all([
-      clearOpenAIOAuthSession(),
-      clearOpenAIOAuthPendingFlow(),
-    ]);
-    const savedSettings = await persistSettings({
-      ...settings,
-      openaiConnectionMethod: 'manual',
+    const payload = await saveBootstrapData({
+      openAIOAuthSession: null,
+      openAIOAuthPendingFlow: null,
+      settings: {
+        ...settings,
+        openaiConnectionMethod: 'manual',
+      },
     });
 
-    setSettings(savedSettings);
+    setSettings(payload.settings);
     setOpenAIOAuthSession(null);
     setOpenAIOAuthPendingFlow(null);
     setOpenAIOAuthMessage(wasConnecting ? 'OpenAI sign-in canceled.' : 'OpenAI sign-in disconnected.');
     setOAuthBusy(false);
-  }, [openAIOAuthPendingFlow, persistSettings, settings]);
+  }, [openAIOAuthPendingFlow, settings]);
 
   const completeOpenAICallback = useCallback(async () => {
     if (!isOpenAIOAuthCallback(window.location.search)) {
@@ -283,7 +268,7 @@ export function SettingsProvider({ children }) {
     const errorDescription = params.get('error_description');
     const code = params.get('code');
     const state = params.get('state');
-    const pendingFlow = openAIOAuthPendingFlow || await getOpenAIOAuthPendingFlow();
+    const pendingFlow = openAIOAuthPendingFlow;
 
     if (pendingFlow?.type === 'device') {
       setCallbackInProgress(false);
@@ -293,8 +278,10 @@ export function SettingsProvider({ children }) {
 
     const fallbackReturnPath = pendingFlow?.returnPath || '/';
 
-    const finish = async (message, shouldOpenSettings = true) => {
-      await clearOpenAIOAuthPendingFlow();
+    const finish = async (message, shouldOpenSettings = true, clearPendingFlow = true) => {
+      if (clearPendingFlow) {
+        await saveBootstrapData({ openAIOAuthPendingFlow: null });
+      }
       setOpenAIOAuthPendingFlow(null);
       setOpenAIOAuthMessage(message);
       if (shouldOpenSettings) {
@@ -318,19 +305,22 @@ export function SettingsProvider({ children }) {
         redirectUri: window.location.origin,
       });
 
-      const savedSession = await saveOpenAIOAuthSession(session);
-      const savedSettings = await persistSettings({
-        ...settings,
-        openaiConnectionMethod: 'oauth',
+      const payload = await saveBootstrapData({
+        openAIOAuthSession: session,
+        openAIOAuthPendingFlow: null,
+        settings: {
+          ...settings,
+          openaiConnectionMethod: 'oauth',
+        },
       });
 
-      setSettings(savedSettings);
-      setOpenAIOAuthSession(savedSession);
-      return finish('OpenAI connected. You can now use Scribe without a manual OpenAI API key.');
+      setSettings(payload.settings);
+      setOpenAIOAuthSession(payload.openAIOAuthSession);
+      return finish('OpenAI connected. You can now use Scribe without a manual OpenAI API key.', true, false);
     } catch (callbackError) {
       return finish(callbackError.message || 'OpenAI sign-in could not be completed.');
     }
-  }, [openAIOAuthPendingFlow, persistSettings, settings]);
+  }, [openAIOAuthPendingFlow, settings]);
 
   const value = useMemo(() => ({
     settings,

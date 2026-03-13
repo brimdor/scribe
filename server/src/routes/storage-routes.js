@@ -4,6 +4,7 @@ import {
   deleteMessage,
   deleteThread,
   getSetting,
+  getSettings,
   getThread,
   listMessagesByThread,
   listSchemas,
@@ -12,6 +13,7 @@ import {
   saveSchema,
   saveThread,
   setSetting,
+  setSettings,
   updateMessage,
   updateThread,
 } from '../services/storage-store.js';
@@ -25,14 +27,104 @@ const APP_SETTINGS_KEYS = [
   'agentBaseUrl',
   'agentModel',
 ];
+const BOOTSTRAP_SETTING_KEYS = [
+  ...APP_SETTINGS_KEYS,
+  'agentApiKey',
+  'selectedRepo',
+  'openaiOAuthSession',
+  'openaiOAuthPendingFlow',
+];
 
 function normalizeSettingString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function buildAppSettings(userId) {
+function normalizeAppSettingsPayload(payload = {}) {
+  return Object.fromEntries(APP_SETTINGS_KEYS.map((key) => {
+    const nextValue = normalizeSettingString(payload[key]);
+
+    if (key === 'openaiConnectionMethod') {
+      return [key, nextValue === 'oauth' ? 'oauth' : 'manual'];
+    }
+
+    if (key === 'agentBaseUrl') {
+      return [key, nextValue.replace(/\/+$/, '')];
+    }
+
+    return [key, nextValue];
+  }));
+}
+
+function normalizeOpenAIOAuthSession(session) {
+  if (!session || typeof session !== 'object') {
+    return null;
+  }
+
+  const normalized = {
+    status: session.status === 'error'
+      ? 'error'
+      : session.status === 'connecting'
+        ? 'connecting'
+        : session.status === 'connected'
+          ? 'connected'
+          : 'disconnected',
+    accessToken: normalizeSettingString(session.accessToken),
+    refreshToken: normalizeSettingString(session.refreshToken),
+    expiresAt: Number.isFinite(session.expiresAt) ? Number(session.expiresAt) : 0,
+    accountId: normalizeSettingString(session.accountId),
+    email: normalizeSettingString(session.email),
+    lastError: normalizeSettingString(session.lastError),
+  };
+
+  if (!normalized.refreshToken && !normalized.accessToken && normalized.status !== 'connecting') {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizeOpenAIOAuthPendingFlow(flow) {
+  if (!flow || typeof flow !== 'object') {
+    return null;
+  }
+
+  if (flow.type === 'device' || (!flow.codeVerifier && flow.deviceAuthId)) {
+    const normalized = {
+      type: 'device',
+      startedAt: Number.isFinite(flow.startedAt) ? Number(flow.startedAt) : 0,
+      returnPath: normalizeSettingString(flow.returnPath) || '/',
+      deviceAuthId: normalizeSettingString(flow.deviceAuthId),
+      userCode: normalizeSettingString(flow.userCode),
+      verificationUrl: normalizeSettingString(flow.verificationUrl) || 'https://auth.openai.com/codex/device',
+      intervalMs: Number.isFinite(flow.intervalMs) && Number(flow.intervalMs) > 0 ? Number(flow.intervalMs) : 5000,
+      expiresAt: Number.isFinite(flow.expiresAt) ? Number(flow.expiresAt) : 0,
+    };
+
+    if (!normalized.deviceAuthId || !normalized.userCode || !normalized.startedAt) {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  const normalized = {
+    type: 'callback',
+    codeVerifier: normalizeSettingString(flow.codeVerifier),
+    state: normalizeSettingString(flow.state),
+    startedAt: Number.isFinite(flow.startedAt) ? Number(flow.startedAt) : 0,
+    returnPath: normalizeSettingString(flow.returnPath) || '/',
+  };
+
+  if (!normalized.codeVerifier || !normalized.state || !normalized.startedAt) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function buildAppSettingsFromValues(values) {
   const settings = Object.fromEntries(
-    APP_SETTINGS_KEYS.map((key) => [key, normalizeSettingString(getSetting(userId, key))]),
+    APP_SETTINGS_KEYS.map((key) => [key, normalizeSettingString(values[key])]),
   );
 
   return {
@@ -40,11 +132,69 @@ function buildAppSettings(userId) {
     openaiConnectionMethod: settings.openaiConnectionMethod === 'oauth' ? 'oauth' : 'manual',
     agentBaseUrl: settings.agentBaseUrl.replace(/\/+$/, ''),
     agentApiKey: '',
-    agentApiKeyConfigured: Boolean(normalizeSettingString(getSetting(userId, 'agentApiKey'))),
+    agentApiKeyConfigured: Boolean(normalizeSettingString(values.agentApiKey)),
   };
 }
 
+function buildAppSettings(userId) {
+  return buildAppSettingsFromValues(getSettings(userId, [...APP_SETTINGS_KEYS, 'agentApiKey']));
+}
+
+function buildBootstrapPayload(req) {
+  const values = getSettings(req.auth.userId, BOOTSTRAP_SETTING_KEYS);
+
+  return {
+    user: req.auth.user,
+    selectedRepo: values.selectedRepo ?? null,
+    settings: buildAppSettingsFromValues(values),
+    openAIOAuthSession: normalizeOpenAIOAuthSession(values.openaiOAuthSession),
+    openAIOAuthPendingFlow: normalizeOpenAIOAuthPendingFlow(values.openaiOAuthPendingFlow),
+  };
+}
+
+function persistBootstrapPayload(userId, payload = {}) {
+  const entries = [];
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'settings')) {
+    const normalizedSettings = normalizeAppSettingsPayload(payload.settings || {});
+    for (const key of APP_SETTINGS_KEYS) {
+      entries.push([key, normalizedSettings[key]]);
+    }
+
+    if (payload.settings?.clearAgentApiKey) {
+      entries.push(['agentApiKey', '']);
+    } else if (typeof payload.settings?.agentApiKey === 'string' && payload.settings.agentApiKey.trim()) {
+      entries.push(['agentApiKey', payload.settings.agentApiKey.trim()]);
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'selectedRepo')) {
+    entries.push(['selectedRepo', payload.selectedRepo ?? null]);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'openAIOAuthSession')) {
+    entries.push(['openaiOAuthSession', normalizeOpenAIOAuthSession(payload.openAIOAuthSession)]);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'openAIOAuthPendingFlow')) {
+    entries.push(['openaiOAuthPendingFlow', normalizeOpenAIOAuthPendingFlow(payload.openAIOAuthPendingFlow)]);
+  }
+
+  if (entries.length) {
+    setSettings(userId, entries);
+  }
+}
+
 router.use(requireAuth);
+
+router.get('/bootstrap', (req, res) => {
+  res.status(200).json(buildBootstrapPayload(req));
+});
+
+router.put('/bootstrap', (req, res) => {
+  persistBootstrapPayload(req.auth.userId, req.body || {});
+  res.status(200).json(buildBootstrapPayload(req));
+});
 
 router.get('/app-settings', (req, res) => {
   res.status(200).json({ settings: buildAppSettings(req.auth.userId) });
@@ -52,31 +202,7 @@ router.get('/app-settings', (req, res) => {
 
 router.put('/app-settings', (req, res) => {
   const userId = req.auth.userId;
-  const payload = req.body || {};
-
-  for (const key of APP_SETTINGS_KEYS) {
-    const nextValue = normalizeSettingString(payload[key]);
-    if (key === 'openaiConnectionMethod') {
-      setSetting(userId, key, nextValue === 'oauth' ? 'oauth' : 'manual');
-      continue;
-    }
-
-    if (key === 'agentBaseUrl') {
-      setSetting(userId, key, nextValue.replace(/\/+$/, ''));
-      continue;
-    }
-
-    setSetting(userId, key, nextValue);
-  }
-
-  if (payload.clearAgentApiKey) {
-    setSetting(userId, 'agentApiKey', '');
-  } else {
-    const nextApiKey = normalizeSettingString(payload.agentApiKey);
-    if (nextApiKey) {
-      setSetting(userId, 'agentApiKey', nextApiKey);
-    }
-  }
+  persistBootstrapPayload(userId, { settings: req.body || {} });
 
   res.status(200).json({ settings: buildAppSettings(userId) });
 });

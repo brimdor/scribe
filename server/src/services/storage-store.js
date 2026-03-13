@@ -62,6 +62,10 @@ export function getSetting(userId, key) {
   return row ? decryptJson(row.value_blob) : null;
 }
 
+export function getSettings(userId, keys) {
+  return Object.fromEntries(keys.map((key) => [key, getSetting(userId, key)]));
+}
+
 export function setSetting(userId, key, value) {
   const db = getDatabase();
   db.prepare(`
@@ -71,6 +75,26 @@ export function setSetting(userId, key, value) {
       value_blob = excluded.value_blob,
       updated_at = excluded.updated_at
   `).run(userId, key, encryptJson(value), now());
+}
+
+export function setSettings(userId, entries) {
+  const db = getDatabase();
+  const writeSetting = db.prepare(`
+    INSERT INTO settings (user_id, setting_key, value_blob, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id, setting_key) DO UPDATE SET
+      value_blob = excluded.value_blob,
+      updated_at = excluded.updated_at
+  `);
+
+  const persistSettings = db.transaction((settingEntries) => {
+    const timestamp = now();
+    for (const [key, value] of settingEntries) {
+      writeSetting.run(userId, key, encryptJson(value), timestamp);
+    }
+  });
+
+  persistSettings(entries);
 }
 
 export function listThreads(userId) {
