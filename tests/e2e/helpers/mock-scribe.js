@@ -165,6 +165,16 @@ function buildAppSettings(state) {
   };
 }
 
+function buildBootstrapPayload(state) {
+  return {
+    user: state.user,
+    selectedRepo: state.settings.get('selectedRepo') || null,
+    settings: buildAppSettings(state),
+    openAIOAuthSession: state.settings.get('openaiOAuthSession') || null,
+    openAIOAuthPendingFlow: state.settings.get('openaiOAuthPendingFlow') || null,
+  };
+}
+
 function getLatestMessageContent(messages = []) {
   const latest = Array.isArray(messages) ? messages[messages.length - 1] : null;
   return String(latest?.content || '');
@@ -261,6 +271,48 @@ export async function installScribeApiMocks(page, state) {
     if (pathname === '/api/auth/logout' && method === 'POST') {
       state.user = null;
       return empty(route);
+    }
+
+    if (pathname === '/api/storage/bootstrap' && method === 'GET') {
+      if (!state.user) {
+        return json(route, 401, { error: 'Not authenticated.' });
+      }
+      return json(route, 200, buildBootstrapPayload(state));
+    }
+
+    if (pathname === '/api/storage/bootstrap' && method === 'PUT') {
+      if (!state.user) {
+        return json(route, 401, { error: 'Not authenticated.' });
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, 'selectedRepo')) {
+        state.settings.set('selectedRepo', body.selectedRepo ?? null);
+      }
+
+      if (body.settings) {
+        state.settings.set('environmentName', String(body.settings.environmentName || '').trim());
+        state.settings.set('githubOwner', String(body.settings.githubOwner || '').trim());
+        state.settings.set('githubRepo', String(body.settings.githubRepo || '').trim());
+        state.settings.set('openaiConnectionMethod', body.settings.openaiConnectionMethod === 'oauth' ? 'oauth' : 'manual');
+        state.settings.set('agentBaseUrl', String(body.settings.agentBaseUrl || '').trim().replace(/\/+$/, ''));
+        state.settings.set('agentModel', String(body.settings.agentModel || '').trim());
+
+        if (body.settings.clearAgentApiKey) {
+          state.settings.set('agentApiKey', '');
+        } else if (typeof body.settings.agentApiKey === 'string' && body.settings.agentApiKey.trim()) {
+          state.settings.set('agentApiKey', body.settings.agentApiKey.trim());
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, 'openAIOAuthSession')) {
+        state.settings.set('openaiOAuthSession', body.openAIOAuthSession ?? null);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, 'openAIOAuthPendingFlow')) {
+        state.settings.set('openaiOAuthPendingFlow', body.openAIOAuthPendingFlow ?? null);
+      }
+
+      return json(route, 200, buildBootstrapPayload(state));
     }
 
     if (pathname.startsWith('/api/storage/settings/')) {
