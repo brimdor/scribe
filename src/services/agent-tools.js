@@ -103,7 +103,7 @@ const TOOL_DEFINITIONS = [
         filePaths: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional repository-relative files to include in the commit. Omitting this stages all local changes.',
+          description: 'Repository-relative files to include in the commit. This is required so publish only stages the intended changes.',
         },
         commitMessage: { type: 'string', description: 'Commit message for the publish action.' },
       },
@@ -445,7 +445,7 @@ export function getAgentToolSystemPrompt() {
     `Available tools: ${toolNames}.`,
     'You must use the available tools whenever the user asks about current notes, tags, files, repository contents, git state, or GitHub collaboration state.',
     'In Scribe, syncing current notes means saving the markdown file to the selected repository, creating a git commit, and pushing that commit to the remote main branch.',
-    'If the user asks to save, sync, publish, commit, or push notes to GitHub, you must use save_note_to_repository or write_repository_file followed by publish_repository_changes.',
+    'If the user asks to save, sync, publish, commit, or push notes to GitHub, you must use save_note_to_repository or write_repository_file followed by publish_repository_changes with explicit file paths for the intended changes only.',
     'If the user asks to move, rename, relocate, archive, or delete a note in the repository, you must use move_note_in_repository or delete_note_from_repository so the change is committed and pushed.',
     'save_note_to_repository is for markdown notes only and should keep filenames aligned to the note title format unless a date-based schema applies.',
     'move_note_in_repository and delete_note_from_repository are for markdown notes only.',

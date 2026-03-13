@@ -317,6 +317,14 @@ describe('github service', () => {
     expect(result.file.path).toBe('Inbox/scribe.md');
   });
 
+  it('rejects publish requests without explicit file paths', async () => {
+    const { publishRepoChanges } = await import('../github');
+
+    await expect(publishRepoChanges({ commitMessage: 'unsafe publish' })).rejects.toThrow(/file paths are required/i);
+
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
   it('rejects non-markdown note publish paths', async () => {
     const { saveNoteToRepoAndPublish } = await import('../github');
 
