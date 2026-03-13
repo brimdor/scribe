@@ -67,6 +67,20 @@ function createSseBody(content, model = 'gpt-4o') {
   ].join('\n');
 }
 
+function createBackendSseBody({ text, requestedModel = 'gpt-4o', usedModel = requestedModel, fallbackReason = '' }) {
+  return [
+    'event: meta',
+    `data: ${JSON.stringify({ requestedModel, usedModel, fallbackReason })}`,
+    '',
+    'event: chunk',
+    `data: ${JSON.stringify({ delta: text })}`,
+    '',
+    'event: done',
+    `data: ${JSON.stringify({ text, requestedModel, model: usedModel, fallbackReason })}`,
+    '',
+  ].join('\n');
+}
+
 function createCodexSseBody(content, model = 'gpt-5.4') {
   return [
     `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: content, model })}`,
@@ -136,6 +150,46 @@ function buildNotes(state) {
       title: content.match(/^#\s+(.+)$/m)?.[1]?.trim() || filePath.split('/').pop()?.replace(/\.md$/i, '') || 'Untitled',
       tags: filePath.includes('Inbox') ? ['project'] : ['research'],
     }));
+}
+
+function buildAppSettings(state) {
+  return {
+    environmentName: state.settings.get('environmentName') || '',
+    githubOwner: state.settings.get('githubOwner') || '',
+    githubRepo: state.settings.get('githubRepo') || '',
+    openaiConnectionMethod: state.settings.get('openaiConnectionMethod') === 'oauth' ? 'oauth' : 'manual',
+    agentBaseUrl: (state.settings.get('agentBaseUrl') || '').replace(/\/+$/, ''),
+    agentApiKey: '',
+    agentApiKeyConfigured: Boolean(state.settings.get('agentApiKey')),
+    agentModel: state.settings.get('agentModel') || '',
+  };
+}
+
+function getLatestMessageContent(messages = []) {
+  const latest = Array.isArray(messages) ? messages[messages.length - 1] : null;
+  return String(latest?.content || '');
+}
+
+function resolveManualChatText(messages = []) {
+  const latestMessage = getLatestMessageContent(messages);
+
+  if (latestMessage.includes('Generate a short, descriptive title')) {
+    return 'Project Kickoff Plan';
+  }
+
+  if (latestMessage.includes('Choose the best repository-relative markdown path for this note')) {
+    return '{"path":"Inbox/project-kickoff-plan.md"}';
+  }
+
+  return [
+    '# Project Kickoff Plan',
+    '',
+    '- Owner: OpenAI',
+    '- Due: 2026-03-15',
+    '- Goal: align note tooling and publish flow',
+    '',
+    'This kickoff note tracks the initial owners, milestones, and immediate actions for the work.',
+  ].join('\n');
 }
 
 export function createMockState({ authenticated = false, oauth = false } = {}) {
@@ -221,6 +275,27 @@ export async function installScribeApiMocks(page, state) {
       }
     }
 
+    if (pathname === '/api/storage/app-settings' && method === 'GET') {
+      return json(route, 200, { settings: buildAppSettings(state) });
+    }
+
+    if (pathname === '/api/storage/app-settings' && method === 'PUT') {
+      state.settings.set('environmentName', String(body.environmentName || '').trim());
+      state.settings.set('githubOwner', String(body.githubOwner || '').trim());
+      state.settings.set('githubRepo', String(body.githubRepo || '').trim());
+      state.settings.set('openaiConnectionMethod', body.openaiConnectionMethod === 'oauth' ? 'oauth' : 'manual');
+      state.settings.set('agentBaseUrl', String(body.agentBaseUrl || '').trim().replace(/\/+$/, ''));
+      state.settings.set('agentModel', String(body.agentModel || '').trim());
+
+      if (body.clearAgentApiKey) {
+        state.settings.set('agentApiKey', '');
+      } else if (typeof body.agentApiKey === 'string' && body.agentApiKey.trim()) {
+        state.settings.set('agentApiKey', body.agentApiKey.trim());
+      }
+
+      return json(route, 200, { settings: buildAppSettings(state) });
+    }
+
     if (pathname === '/api/storage/threads' && method === 'GET') {
       return json(route, 200, { threads: state.threads });
     }
@@ -301,6 +376,33 @@ export async function installScribeApiMocks(page, state) {
 
     if (pathname === '/api/github/orgs' && method === 'GET') {
       return json(route, 200, { orgs: [{ login: 'openai' }] });
+    }
+
+    if (pathname === '/api/ai/manual/models' && method === 'GET') {
+      return json(route, 200, { models: ['gpt-4o', 'gpt-4o-mini'] });
+    }
+
+    if (pathname === '/api/ai/manual/chat' && method === 'POST') {
+      const text = resolveManualChatText(body.messages || []);
+      const requestedModel = String(body.model || 'gpt-4o');
+
+      if (body.stream) {
+        return route.fulfill({
+          status: 200,
+          headers: {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+          },
+          body: createBackendSseBody({ text, requestedModel, usedModel: requestedModel }),
+        });
+      }
+
+      return json(route, 200, {
+        text,
+        requestedModel,
+        model: requestedModel,
+        fallbackReason: '',
+      });
     }
 
     if (pathname === '/api/github/repos' && method === 'GET') {

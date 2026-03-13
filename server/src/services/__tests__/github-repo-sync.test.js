@@ -143,6 +143,7 @@ describe('github repo sync service', () => {
     const repoPath = path.join(ownerRoot, 'ScribeVault');
     fs.mkdirSync(path.join(repoPath, 'Projects'), { recursive: true });
     fs.writeFileSync(path.join(repoPath, 'Projects', 'Scribe.md'), '# Scribe\n', 'utf8');
+    fs.writeFileSync(path.join(repoPath, 'scratch.txt'), 'do not publish\n', 'utf8');
 
     const { publishRepoChangesForUser } = await import('../github-repo-sync.js');
     const result = await publishRepoChangesForUser({
@@ -166,6 +167,30 @@ describe('github repo sync service', () => {
     }));
     expect(result.remoteHeadSha).toBe(result.commitSha);
     expect(fs.readFileSync(path.join(clonedVerifyPath, 'Projects', 'Scribe.md'), 'utf8')).toContain('# Scribe');
+    expect(fs.existsSync(path.join(clonedVerifyPath, 'scratch.txt'))).toBe(false);
+  });
+
+  it('rejects publish requests without explicit file paths', async () => {
+    const remotePath = path.join(tempRoot, 'remote.git');
+    createBareRemote(remotePath);
+    seedRemoteRepo(remotePath);
+
+    const ownerRoot = path.join(repoSyncRoot, 'brimdor', 'brimdor');
+    fs.mkdirSync(ownerRoot, { recursive: true });
+    execFileSync('git', ['clone', remotePath, 'ScribeVault'], { cwd: ownerRoot });
+    const repoPath = path.join(ownerRoot, 'ScribeVault');
+    fs.writeFileSync(path.join(repoPath, 'scratch.txt'), 'local only\n', 'utf8');
+
+    const { publishRepoChangesForUser } = await import('../github-repo-sync.js');
+
+    await expect(publishRepoChangesForUser({
+      userId: 'user-1',
+      username: 'brimdor',
+      owner: 'brimdor',
+      repo: 'ScribeVault',
+      commitMessage: 'should fail',
+      reason: 'agent-publish',
+    })).rejects.toThrow(/file paths are required/i);
   });
 
   it('migrates legacy checkouts into owner-scoped paths', async () => {

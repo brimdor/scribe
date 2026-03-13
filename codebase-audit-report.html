@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scribe Codebase Audit Report</title>
+  <style>
+    :root {
+      --bg: #09111d;
+      --bg-elevated: #101a2a;
+      --bg-panel: #132036;
+      --border: #22324a;
+      --text: #ecf3ff;
+      --text-muted: #9eb0c9;
+      --text-dim: #7f90a8;
+      --accent: #66d9c2;
+      --accent-strong: #9ce7db;
+      --critical: #ff5d73;
+      --high: #ff9d57;
+      --medium: #ffd166;
+      --low: #7cc4ff;
+      --success: #78e08f;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(102, 217, 194, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(124, 196, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, #08101b 0%, #0b1422 100%);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    a { color: var(--accent-strong); }
+    code {
+      padding: 0.15rem 0.4rem;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      color: #d8f8f0;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.92em;
+    }
+
+    .wrap {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 64px;
+    }
+
+    .hero {
+      background: linear-gradient(145deg, rgba(19, 32, 54, 0.95), rgba(10, 19, 32, 0.96));
+      border: 1px solid rgba(156, 231, 219, 0.16);
+      border-radius: 28px;
+      padding: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 240px;
+      height: 240px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(102, 217, 194, 0.24), transparent 68%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: var(--accent-strong);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    h1, h2, h3 { margin: 0 0 12px; line-height: 1.15; }
+    h1 { font-size: clamp(2rem, 4vw, 3.35rem); }
+    h2 { font-size: 1.45rem; margin-top: 28px; }
+    h3 { font-size: 1.05rem; }
+    p { margin: 0 0 14px; color: var(--text-muted); }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .stats {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      margin-top: 22px;
+    }
+
+    .card,
+    .finding,
+    .feature,
+    .summary-box {
+      background: rgba(16, 26, 42, 0.88);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      color: var(--text-dim);
+      font-size: 0.92rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .toc a,
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.92rem;
+    }
+
+    .section {
+      margin-top: 28px;
+    }
+
+    .two-up {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    ul { margin: 0; padding-left: 1.1rem; color: var(--text-muted); }
+    li + li { margin-top: 8px; }
+
+    .severity {
+      display: inline-block;
+      padding: 0.36rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .critical { background: rgba(255, 93, 115, 0.16); color: var(--critical); }
+    .high { background: rgba(255, 157, 87, 0.16); color: var(--high); }
+    .medium { background: rgba(255, 209, 102, 0.16); color: var(--medium); }
+    .low { background: rgba(124, 196, 255, 0.16); color: var(--low); }
+
+    .finding h3,
+    .feature h3 {
+      margin-bottom: 8px;
+    }
+
+    .meta {
+      color: var(--text-dim);
+      font-size: 0.92rem;
+      margin-bottom: 14px;
+    }
+
+    .finding-grid,
+    .feature-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .label {
+      color: var(--text);
+      font-weight: 700;
+      display: block;
+      margin: 12px 0 6px;
+    }
+
+    .callout-success {
+      border-left: 4px solid var(--success);
+      padding-left: 16px;
+    }
+
+    .callout-warn {
+      border-left: 4px solid var(--high);
+      padding-left: 16px;
+    }
+
+    .footer {
+      margin-top: 36px;
+      color: var(--text-dim);
+      font-size: 0.95rem;
+      text-align: center;
+    }
+
+    @media (max-width: 720px) {
+      .wrap { width: min(100% - 20px, 1180px); padding-top: 20px; }
+      .hero, .card, .finding, .feature, .summary-box { padding: 18px; }
+      h1 { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <span class="eyebrow">Repository Audit</span>
+      <h1>Scribe full codebase improvement report</h1>
+      <p>
+        Scope reviewed: React/Vite frontend, Express/SQLite backend, GitHub repo tooling, OpenAI integration,
+        tests, specs, generated artifacts, and deployment readiness. This report focuses on concrete improvements
+        suggested by the current codebase rather than generic best practices.
+      </p>
+      <div class="toc">
+        <a href="#executive-summary">Executive summary</a>
+        <a href="#validation">Validation</a>
+        <a href="#findings">Prioritized findings</a>
+        <a href="#features">Feature updates</a>
+        <a href="#roadmap">Recommended sequencing</a>
+      </div>
+      <div class="grid stats">
+        <div class="card"><div class="stat-value">13</div><div class="stat-label">Improvement items</div></div>
+        <div class="card"><div class="stat-value" style="color: var(--critical);">1</div><div class="stat-label">Critical</div></div>
+        <div class="card"><div class="stat-value" style="color: var(--high);">4</div><div class="stat-label">High</div></div>
+        <div class="card"><div class="stat-value" style="color: var(--medium);">6</div><div class="stat-label">Medium</div></div>
+        <div class="card"><div class="stat-value" style="color: var(--low);">2</div><div class="stat-label">Low</div></div>
+      </div>
+    </section>
+
+    <section id="executive-summary" class="section grid two-up">
+      <article class="summary-box">
+        <h2>Executive summary</h2>
+        <p>
+          Scribe is structurally coherent and already has a healthy baseline: lint passes, unit and integration tests pass,
+          builds succeed, and the application has a clear product shape. The main weaknesses are not basic correctness - they
+          are safety boundaries, scaling characteristics, and maintainability in the most complex modules.
+        </p>
+        <ul>
+          <li>The most urgent issue is repository path resolution: owner collisions can make different repos share one local checkout.</li>
+          <li>Security posture needs tightening around encryption key fallback behavior and browser-side manual provider credentials.</li>
+          <li>Publishing to <code>origin/main</code> is functional but still too blunt for collaborative or mixed-change repositories.</li>
+          <li>The app is trending toward oversized orchestration files and a blocking server execution model that will become painful as usage grows.</li>
+        </ul>
+      </article>
+      <article class="summary-box">
+        <h2>Architecture snapshot</h2>
+        <ul>
+          <li><strong>Frontend:</strong> React 18 + Vite in <code>src/</code>.</li>
+          <li><strong>Backend:</strong> Express API in <code>server/src/</code>.</li>
+          <li><strong>Persistence:</strong> encrypted SQLite via <code>better-sqlite3</code>.</li>
+          <li><strong>Core workflows:</strong> GitHub auth, repo sync, note publish, AI chat, schema-driven note generation.</li>
+          <li><strong>Hotspots:</strong> <code>src/services/openai.js</code>, <code>src/services/github.js</code>, <code>server/src/services/github-repo-files.js</code>, <code>server/src/routes/github-routes.js</code>, <code>src/components/Settings/SettingsPanel.jsx</code>.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section id="validation" class="section grid two-up">
+      <article class="card">
+        <h2>Validation run</h2>
+        <div class="callout-success">
+          <p><strong>Passed:</strong> <code>npm run lint</code>, <code>npm run test</code>, <code>npm run build</code>.</p>
+          <p><strong>Build note:</strong> Vite reported a large main JS chunk at roughly 508 kB minified.</p>
+        </div>
+      </article>
+      <article class="card">
+        <h2>Environment gap</h2>
+        <div class="callout-warn">
+          <p>
+            <strong>E2E did not run successfully:</strong> <code>npm run test:e2e</code> failed because Playwright Chromium was not installed locally.
+          </p>
+          <p>
+            This is an environment/developer-experience issue rather than an application regression, but it still weakens validation confidence.
+          </p>
+        </div>
+      </article>
+    </section>
+
+    <section id="findings" class="section">
+      <h2>Prioritized findings</h2>
+      <div class="grid finding-grid">
+        <article class="finding">
+          <span class="severity critical">Critical</span>
+          <h3>1. Repository checkout paths can collide across owners</h3>
+          <p class="meta">Affected area: local repo sync and publish safety</p>
+          <p>
+            The resolved checkout path uses <code>&lt;username&gt;/&lt;repo&gt;</code> but does not include the repository owner. That means
+            <code>ownerA/project</code> and <code>ownerB/project</code> will reuse the same local directory, which can silently attach sync or publish operations
+            to the wrong remote.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>server/src/services/github-repo-sync.js:50</code> builds <code>userRoot</code> from the username only.</li>
+            <li><code>server/src/services/github-repo-sync.js:51</code> resolves <code>repoPath</code> from <code>assignment.repo</code> only.</li>
+            <li><code>server/src/services/github-repo-sync.js:169</code> and downstream publish logic operate against that path without verifying the remote URL.</li>
+          </ul>
+          <span class="label">Why it matters</span>
+          <p>This is a data integrity and safety issue: the wrong repository can be read, mutated, committed, or pushed.</p>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Change the checkout layout to <code>server/repos/&lt;username&gt;/&lt;owner&gt;/&lt;repo&gt;</code>, verify <code>remote.origin.url</code> before sync/publish,
+            and add migration logic for any existing cloned paths.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity high">High</span>
+          <h3>2. Encrypted storage falls back to a hard-coded development key</h3>
+          <p class="meta">Affected area: token and settings protection</p>
+          <p>
+            If <code>SCRIBE_DB_ENCRYPTION_KEY</code> is not set, the server falls back to <code>change-me-local-dev-key</code>. That means encrypted-at-rest data is not actually protected in any environment where the variable is forgotten.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>server/src/config/env.js:5</code> defines the static fallback key.</li>
+            <li><code>server/src/config/env.js:42</code> uses it automatically.</li>
+          </ul>
+          <span class="label">Why it matters</span>
+          <p>GitHub tokens, provider state, and persisted user data become trivially recoverable if a deployment misses configuration.</p>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Fail fast when the key is missing outside explicit test mode. Prefer requiring a unique key in all environments and introduce key versioning if encrypted payload rotation is expected.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity high">High</span>
+          <h3>3. Manual provider credentials and requests live in the browser</h3>
+          <p class="meta">Affected area: AI provider security and production reliability</p>
+          <p>
+            Manual OpenAI-compatible provider requests are initialized client-side and use <code>dangerouslyAllowBrowser: true</code>. The effective API key also lives in frontend state and storage flows.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>src/services/openai.js:284</code> - <code>src/services/openai.js:287</code> initializes the provider SDK in-browser.</li>
+            <li><code>src/services/openai.js:264</code> resolves a browser-side API key.</li>
+            <li><code>src/components/Settings/SettingsPanel.jsx</code> exposes and stores manual provider settings.</li>
+          </ul>
+          <span class="label">Why it matters</span>
+          <p>
+            Secrets are exposed to any XSS or extension context, and production usage becomes dependent on third-party CORS behavior.
+          </p>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Move manual provider traffic behind the Express API, store provider credentials server-side only, and expose a streaming <code>/api/chat</code> endpoint to the UI.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity high">High</span>
+          <h3>4. Publish can stage and commit unrelated local changes</h3>
+          <p class="meta">Affected area: note publishing correctness</p>
+          <p>
+            When no explicit file list is provided, publish stages the entire working tree with <code>git add -A</code>. A single note publish can therefore sweep in unrelated edits already present in the checkout.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>server/src/services/github-repo-sync.js:202</code> - <code>server/src/services/github-repo-sync.js:205</code> stages all files when no path list exists.</li>
+            <li><code>src/services/agent-tools.js</code> and note publish flows allow generic publish behavior from assistant actions.</li>
+          </ul>
+          <span class="label">Why it matters</span>
+          <p>This increases the risk of accidental commits, especially once the repo checkout becomes a more heavily used workspace.</p>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Require explicit path lists for note publishing, stage only files created or mutated by the current action, and reject publish when unrelated dirty files are present.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity high">High</span>
+          <h3>5. Repo inspection and indexing logic is synchronous and blocks the Node process</h3>
+          <p class="meta">Affected area: scalability and concurrent request latency</p>
+          <p>
+            Core repository traversal relies heavily on <code>fs.readdirSync</code> and <code>fs.readFileSync</code> recursion. This keeps the event loop busy while large trees, note scans, tag extraction, and file search operations run.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>server/src/services/github-repo-files.js:126</code> and <code>server/src/services/github-repo-files.js:151</code> perform blocking directory and file reads.</li>
+            <li><code>server/src/services/github-repo-files.js</code> repeats the same pattern across search, tree, markdown collection, and note tag extraction.</li>
+          </ul>
+          <span class="label">Why it matters</span>
+          <p>One expensive repo request can delay every other user because the server is single-process and single-threaded.</p>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Shift expensive scans into background indexing, cache note and tag metadata, and keep request-time work limited to targeted reads or indexed queries.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>6. Core logic is concentrated in several large multi-responsibility files</h3>
+          <p class="meta">Affected area: maintainability and testability</p>
+          <p>
+            A few files already function as orchestration hubs for unrelated behavior. They are readable today, but they are the main future change-risk points.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>src/services/github.js</code></li>
+            <li><code>src/services/openai.js</code></li>
+            <li><code>server/src/services/github-repo-files.js</code></li>
+            <li><code>server/src/routes/github-routes.js</code></li>
+            <li><code>src/components/Settings/SettingsPanel.jsx</code></li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Split by capability: repository reads, repository writes, git actions, GitHub API calls, chat orchestration, OAuth lifecycle, and settings subpanels.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>7. Settings bootstrap and persistence are chatty and non-atomic</h3>
+          <p class="meta">Affected area: startup latency and consistency</p>
+          <p>
+            Settings reads and writes fan out into many independent calls. This increases round-trips and makes partial save states more likely.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>src/services/storage.js:211</code> - <code>src/services/storage.js:223</code> loads and saves settings via multiple parallel key requests.</li>
+            <li><code>src/context/AuthContext.jsx</code> and <code>src/context/SettingsContext.jsx</code> coordinate several startup fetches.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Add a backend bootstrap endpoint returning session plus normalized settings in one payload, and add a batch update endpoint with server-side validation.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>8. Frontend coordination depends on a window-level custom event bus</h3>
+          <p class="meta">Affected area: UI predictability and refactor safety</p>
+          <p>
+            Components communicate through DOM events like <code>scribe:new-message</code>, <code>scribe:stream-start</code>, <code>scribe:save-note-request</code>, and <code>scribe:regenerate</code>. This creates hidden coupling outside React state flow.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>src/components/Chat/InputConsole.jsx:105</code>, <code>src/components/Chat/InputConsole.jsx:144</code>, <code>src/components/Chat/InputConsole.jsx:232</code></li>
+            <li><code>src/components/Chat/ChatWindow.jsx:35</code> - <code>src/components/Chat/ChatWindow.jsx:88</code></li>
+            <li><code>src/components/Chat/ResponseBar.jsx:37</code> and <code>src/components/Chat/ResponseBar.jsx:95</code></li>
+            <li><code>src/components/Sidebar/Sidebar.jsx:17</code> - <code>src/components/Sidebar/Sidebar.jsx:29</code></li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Replace the DOM event bus with a reducer-based context or small store. Either wire regenerate through fully or remove the incomplete event path.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>9. The main frontend bundle is already larger than it should be</h3>
+          <p class="meta">Affected area: performance and startup time</p>
+          <p>
+            Production build output shows a single minified JS chunk at roughly 508 kB. Large AI, markdown, and settings logic appears to be eagerly loaded even before the user reaches the relevant flows.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>npm run build</code> emitted a chunk-size warning.</li>
+            <li>Heavy service modules are imported from the main app path rather than lazily loaded.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Lazy-load settings, OAuth flows, markdown rendering enhancements, and AI provider code. Moving manual provider usage server-side will also reduce browser bundle weight.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>10. E2E coverage relies mostly on mocked behavior</h3>
+          <p class="meta">Affected area: release confidence</p>
+          <p>
+            Browser tests validate UI flows but do not fully exercise the real API, session cookies, SQLite state, or git-backed repo operations in one full stack path.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>playwright.config.js:15</code> - <code>playwright.config.js:19</code> boots only the frontend web server.</li>
+            <li><code>tests/e2e/scribe-browser.spec.js</code> uses the mocked test harness rather than a live backend runtime.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Add at least one full-stack Playwright lane with a temporary DB, temporary repo remote, and live Express API so login, sync, chat, and publish are verified together.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>11. Production deployment is under-defined</h3>
+          <p class="meta">Affected area: operability and onboarding</p>
+          <p>
+            The repository has solid dev scripts but no clear production startup contract, no containerization, and no CI workflow. The app currently assumes Vite dev behavior and local environment wiring.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>package.json</code> contains dev, test, lint, preview, and build scripts, but no production <code>start</code>.</li>
+            <li>No Dockerfile, compose file, or GitHub Actions workflow is present.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Document and automate a production topology: static frontend build, API service, reverse proxy, required environment variables, health checks, and CI for lint/test/build/e2e.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity medium">Medium</span>
+          <h3>12. Request validation at API boundaries is too light</h3>
+          <p class="meta">Affected area: contract stability and server-side trust</p>
+          <p>
+            Routes accept flexible payloads and rely heavily on downstream normalization rather than explicit schemas. That works today, but it makes malformed state and inconsistent contracts easier to introduce.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>server/src/routes/storage-routes.js</code> accepts broad object payloads for stored entities.</li>
+            <li><code>server/src/routes/github-routes.js</code> exposes many operations with string/shape coercion rather than strict request schemas.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Add shared request schemas with <code>zod</code> or <code>valibot</code>, validate before persistence, and centralize response shaping for all storage and GitHub routes.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity low">Low</span>
+          <h3>13. Generated artifacts and stale app remnants clutter the repository</h3>
+          <p class="meta">Affected area: repo hygiene and contributor clarity</p>
+          <p>
+            The root app is the active application, but there is also a stray <code>apps/web/.next</code> cache footprint. That makes the repo feel partially abandoned or mid-migration.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>apps/web/.next/trace</code></li>
+            <li><code>apps/web/.next/cache/webpack/client-development/index.pack.gz</code></li>
+            <li><code>.gitignore</code> ignores <code>dist/</code> and runtime DB files, but not <code>.next/</code>.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Remove tracked generated artifacts, ignore <code>.next/</code>, and either delete <code>apps/web</code> or make it a real supported app path.
+          </p>
+        </article>
+
+        <article class="finding">
+          <span class="severity low">Low</span>
+          <h3>14. <code>/logout-all</code> does not currently log out all sessions</h3>
+          <p class="meta">Affected area: endpoint correctness and naming clarity</p>
+          <p>
+            The route clears only the current session ID, so the endpoint name over-promises compared with the implementation.
+          </p>
+          <span class="label">Evidence</span>
+          <ul>
+            <li><code>server/src/routes/auth-routes.js:79</code> - <code>server/src/routes/auth-routes.js:85</code> deletes one session.</li>
+            <li><code>server/src/services/user-store.js:171</code> only exposes single-session deletion.</li>
+          </ul>
+          <span class="label">Best implementation approach</span>
+          <p>
+            Either implement <code>deleteSessionsForUser(userId)</code> and keep the route name, or rename the route to describe current behavior honestly.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <h2>Five feature updates worth building next</h2>
+      <div class="grid feature-grid">
+        <article class="feature">
+          <h3>1. Git-backed note history and restore</h3>
+          <p>
+            Scribe already publishes into git and exposes raw git metadata, but the product still lacks a user-facing way to inspect or restore a note's revision history. This is one of the highest-value product upgrades because the underlying data already exists.
+          </p>
+          <span class="label">Why this matters</span>
+          <p>
+            It turns git from an invisible implementation detail into a core trust feature. Users can safely iterate, compare drafts, and recover earlier note versions without leaving the app.
+          </p>
+          <span class="label">Best implementation approach</span>
+          <ul>
+            <li>Add note-scoped history endpoints on the server using existing git helpers in <code>server/src/services/github-repo-sync.js</code> and <code>server/src/services/github-repo-files.js</code>.</li>
+            <li>Create a note history panel in the frontend with commit list, inline diff preview, and a restore action that writes a new commit rather than rewriting history.</li>
+            <li>Thread the feature into existing response actions so users can jump from a published note directly into history.</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>2. Indexed repository knowledge base with fast retrieval</h3>
+          <p>
+            Current repo context is assembled by scanning the working tree on demand. That is workable for smaller repos, but it does not scale and it forces the AI workflow to depend on repeated file-system traversal.
+          </p>
+          <span class="label">Why this matters</span>
+          <p>
+            A proper index makes responses faster, more grounded, and more predictable. It also creates a platform for semantic note search, tag browsing, and cross-note intelligence.
+          </p>
+          <span class="label">Best implementation approach</span>
+          <ul>
+            <li>Trigger indexing after sync or publish in <code>server/src/services/github-repo-sync.js</code>.</li>
+            <li>Store note metadata, tags, headings, and optional file excerpts in SQLite using FTS tables.</li>
+            <li>Replace heuristic prompt-building in <code>src/services/github.js</code> with structured retrieval calls that return ranked evidence blocks.</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>3. Multi-repository workspaces with per-thread repo binding</h3>
+          <p>
+            The current app assumes one assigned repository at a time. That is restrictive for users who research across projects, keep separate note vaults, or want different thread contexts mapped to different repositories.
+          </p>
+          <span class="label">Why this matters</span>
+          <p>
+            It upgrades Scribe from a single-repo assistant into a real workspace. Threads become more durable and context-specific, and repository switching no longer has to be global and disruptive.
+          </p>
+          <span class="label">Best implementation approach</span>
+          <ul>
+            <li>Add repository assignment entities in storage and attach a selected repo identifier to each thread.</li>
+            <li>Surface repo selection in the layout shell and thread creation flow.</li>
+            <li>Propagate the active repo through GitHub tools, repo sync, note save, and publish APIs so every action is explicitly scoped.</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>4. Safe publish workflow with branches and pull requests</h3>
+          <p>
+            Direct pushes to <code>origin/main</code> are convenient for personal vaults, but they are too risky for team repositories or stricter governance. The codebase already contains the building blocks to expand toward a safer collaboration model.
+          </p>
+          <span class="label">Why this matters</span>
+          <p>
+            This removes the sharpest workflow edge in the product and makes Scribe credible for shared repos where review matters.
+          </p>
+          <span class="label">Best implementation approach</span>
+          <ul>
+            <li>Extend publish endpoints to support branch creation, commit-on-branch, and PR creation via Octokit.</li>
+            <li>Offer two publish modes in the UI: direct publish for personal repos, review publish for collaborative repos.</li>
+            <li>Use the note title, thread, and schema metadata to prefill branch names and PR descriptions.</li>
+          </ul>
+        </article>
+
+        <article class="feature">
+          <h3>5. Custom schema builder with validation and automations</h3>
+          <p>
+            The application already stores schemas and uses them to guide note generation, but schema authoring is still underdeveloped relative to the platform's value proposition.
+          </p>
+          <span class="label">Why this matters</span>
+          <p>
+            Better schemas make note output more consistent, unlock team-specific workflows, and reduce prompt repetition. This is a natural product differentiator because it strengthens both AI guidance and repository organization.
+          </p>
+          <span class="label">Best implementation approach</span>
+          <ul>
+            <li>Build a visual schema editor on top of existing storage routes for schemas.</li>
+            <li>Add validation rules for required sections, frontmatter, default directories, and tag conventions.</li>
+            <li>Connect schema metadata into <code>src/utils/note-publish.js</code> so generated notes automatically resolve to the correct path and frontmatter shape.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="roadmap" class="section grid two-up">
+      <article class="card">
+        <h2>Recommended remediation order</h2>
+        <ol style="margin: 0; padding-left: 1.2rem; color: var(--text-muted);">
+          <li>Fix repo path collisions and add remote verification.</li>
+          <li>Remove encryption key fallback behavior outside test mode.</li>
+          <li>Move manual provider requests server-side.</li>
+          <li>Tighten publish scoping so only intended files can be committed.</li>
+          <li>Introduce request validation schemas.</li>
+          <li>Refactor hotspot modules and replace the event bus.</li>
+          <li>Add indexing, full-stack E2E, CI, and a documented production deployment path.</li>
+        </ol>
+      </article>
+      <article class="card">
+        <h2>Highest leverage next build</h2>
+        <p>
+          If only one product feature should be built after the safety fixes, the best return is <strong>indexed repository knowledge base</strong>.
+          It improves response quality, unlocks faster search, reduces blocking file scans, and forms a clean foundation for note history, multi-repo support, and smarter grounded AI responses.
+        </p>
+      </article>
+    </section>
+
+    <p class="footer">
+      Report generated for the repository root at <code>/home/brimdor/Documents/Github/scribe</code>.<br>
+      File created: <code>codebase-audit-report.html</code>
+    </p>
+  </div>
+</body>
+</html>

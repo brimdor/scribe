@@ -288,11 +288,11 @@ export async function publishRepoChangesForUser({
     ? filePaths.map((value) => String(value || '').trim()).filter(Boolean)
     : [];
 
-  if (normalizedPaths.length) {
-    await runGitCommand(['-C', assignment.repoPath, 'add', '-A', '--', ...normalizedPaths]);
-  } else {
-    await runGitCommand(['-C', assignment.repoPath, 'add', '-A']);
+  if (!normalizedPaths.length) {
+    throw new Error('Publish file paths are required. Publish requests must explicitly scope the files to commit.');
   }
+
+  await runGitCommand(['-C', assignment.repoPath, 'add', '-A', '--', ...normalizedPaths]);
 
   const { stdout: stagedStatus } = await runGitCommand(['-C', assignment.repoPath, 'diff', '--cached', '--name-only']);
   const stagedFiles = stagedStatus.split(/\r?\n/).filter(Boolean);

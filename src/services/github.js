@@ -155,8 +155,13 @@ export async function syncAssignedRepo({ owner, repo, reason = 'manual-sync' } =
 }
 
 export async function publishRepoChanges({ owner, repo, filePaths = [], commitMessage = '', reason = 'manual-publish' } = {}) {
+  if (!Array.isArray(filePaths) || !filePaths.some((value) => String(value || '').trim())) {
+    throw new Error('Publish file paths are required.');
+  }
+
   const payload = {
     reason,
+    filePaths: filePaths.map((value) => String(value || '').trim()).filter(Boolean),
   };
 
   if (typeof owner === 'string' && owner.trim()) {
@@ -165,10 +170,6 @@ export async function publishRepoChanges({ owner, repo, filePaths = [], commitMe
 
   if (typeof repo === 'string' && repo.trim()) {
     payload.repo = repo.trim();
-  }
-
-  if (Array.isArray(filePaths) && filePaths.length) {
-    payload.filePaths = filePaths;
   }
 
   if (typeof commitMessage === 'string' && commitMessage.trim()) {
