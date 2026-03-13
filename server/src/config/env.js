@@ -5,6 +5,20 @@ const DEFAULT_SESSION_TTL_HOURS = 24;
 const DEV_FALLBACK_ENCRYPTION_KEY = 'change-me-local-dev-key';
 const DEFAULT_REPO_SYNC_ROOT = 'server/repos';
 
+function resolveEncryptionKey() {
+  if (process.env.SCRIBE_DB_ENCRYPTION_KEY) {
+    return process.env.SCRIBE_DB_ENCRYPTION_KEY;
+  }
+
+  if (process.env.NODE_ENV === 'test') {
+    return DEV_FALLBACK_ENCRYPTION_KEY;
+  }
+
+  throw new Error(
+    'SCRIBE_DB_ENCRYPTION_KEY must be set unless NODE_ENV is explicitly "test".',
+  );
+}
+
 function toPositiveNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -39,11 +53,7 @@ export function getConfig() {
     return configCache;
   }
 
-  const encryptionKey = process.env.SCRIBE_DB_ENCRYPTION_KEY || DEV_FALLBACK_ENCRYPTION_KEY;
-  if (!process.env.SCRIBE_DB_ENCRYPTION_KEY) {
-    // eslint-disable-next-line no-console
-    console.warn('SCRIBE_DB_ENCRYPTION_KEY is not set. Using development fallback key.');
-  }
+  const encryptionKey = resolveEncryptionKey();
 
   configCache = {
     port: toPositiveNumber(process.env.PORT, 8787),
@@ -55,4 +65,8 @@ export function getConfig() {
   };
 
   return configCache;
+}
+
+export function resetConfigCache() {
+  configCache = null;
 }

@@ -134,7 +134,9 @@ export SCRIBE_REPO_SYNC_ROOT="./server/repos"
 Notes:
 
 - `SCRIBE_DB_PATH` controls the SQLite file location.
-- `SCRIBE_DB_ENCRYPTION_KEY` is required for secure encrypted persistence outside local throwaway development.
+- `SCRIBE_DB_ENCRYPTION_KEY` is required whenever the API starts outside explicit `NODE_ENV=test`.
+- If `SCRIBE_DB_ENCRYPTION_KEY` is missing, the server now fails fast instead of falling back to an insecure default key.
+- Use a long random secret for each environment and do not share development and production keys.
 - `SCRIBE_SESSION_TTL_HOURS` controls session lifetime.
 - `SCRIBE_REPO_SYNC_ROOT` controls where synced GitHub repositories are stored.
 
@@ -146,6 +148,8 @@ Install dependencies:
 npm install
 npx playwright install chromium
 ```
+
+Before running `npm run dev`, export `SCRIBE_DB_ENCRYPTION_KEY` in your shell or load it from your local env management workflow.
 
 Start the web app and API together:
 
