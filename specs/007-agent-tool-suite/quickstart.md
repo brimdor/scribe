@@ -19,7 +19,7 @@
 ### Scenario 2: Repository write
 
 1. Ask the agent to create or update a small text file in the assigned repository.
-2. Verify the file exists under `server/repos/<github-login>/<repo>/` with the expected content.
+2. Verify the file exists under `server/repos/<github-login>/<owner>/<repo>/` with the expected content.
 
 ### Scenario 3: Git state
 

@@ -317,7 +317,7 @@ export async function installScribeApiMocks(page, state) {
         sync: {
           status: 'pulled',
           syncState: 'pulled',
-          localPath: 'brimdor/ScribeVault',
+          localPath: 'brimdor/brimdor/ScribeVault',
           message: 'Repository updated successfully.',
         },
       });

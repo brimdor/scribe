@@ -31,7 +31,7 @@ describe('github service', () => {
     apiRequest.mockResolvedValueOnce({
       sync: {
         status: 'pulled',
-        localPath: 'brimdor/ScribeVault',
+        localPath: 'brimdor/brimdor/ScribeVault',
       },
     });
 
@@ -52,7 +52,7 @@ describe('github service', () => {
     });
     expect(result).toEqual({
       status: 'pulled',
-      localPath: 'brimdor/ScribeVault',
+      localPath: 'brimdor/brimdor/ScribeVault',
     });
   });
 
@@ -87,7 +87,7 @@ describe('github service', () => {
           status: 'skipped',
           syncState: 'local-changes',
           message: 'Local changes detected; skipping git pull to avoid merge conflicts.',
-          localPath: 'brimdor/ScribeVault',
+          localPath: 'brimdor/brimdor/ScribeVault',
         },
       })
       .mockResolvedValueOnce({

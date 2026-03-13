@@ -53,7 +53,7 @@ describe('github repo files service', () => {
   });
 
   it('lists repository tree and reads text files', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
     fs.mkdirSync(path.join(repoPath, 'docs'), { recursive: true });
     fs.writeFileSync(path.join(repoPath, 'README.md'), '# ScribeVault\n', 'utf8');
@@ -70,7 +70,7 @@ describe('github repo files service', () => {
   });
 
   it('searches, writes, and inspects git state safely', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
     fs.mkdirSync(path.join(repoPath, 'docs'), { recursive: true });
     fs.writeFileSync(path.join(repoPath, 'README.md'), '# ScribeVault\nRepository overview\n', 'utf8');
@@ -109,7 +109,7 @@ describe('github repo files service', () => {
   });
 
   it('extracts note tags from markdown frontmatter and inline tags', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
     fs.mkdirSync(path.join(repoPath, 'Projects'), { recursive: true });
     fs.writeFileSync(path.join(repoPath, 'Projects', 'Watchtower.md'), [
@@ -137,7 +137,7 @@ describe('github repo files service', () => {
   });
 
   it('lists notes, finds notes by tag, and reads frontmatter', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
     fs.mkdirSync(path.join(repoPath, 'Projects'), { recursive: true });
     fs.writeFileSync(path.join(repoPath, 'Projects', 'Watchtower.md'), [
@@ -179,7 +179,7 @@ describe('github repo files service', () => {
   });
 
   it('moves and deletes repository files safely', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
     fs.mkdirSync(path.join(repoPath, 'Inbox'), { recursive: true });
     fs.mkdirSync(path.join(repoPath, 'Archive'), { recursive: true });
@@ -217,7 +217,7 @@ describe('github repo files service', () => {
   });
 
   it('rejects path traversal when reading files', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
 
     const { readRepoFileForUser } = await import('../github-repo-files.js');
@@ -230,7 +230,7 @@ describe('github repo files service', () => {
   });
 
   it('rejects path traversal when writing files', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
 
     const { writeRepoFileForUser } = await import('../github-repo-files.js');

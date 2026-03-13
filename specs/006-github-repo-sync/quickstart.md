@@ -9,7 +9,7 @@
 1. Start Scribe (`npm run dev`).
 2. Log in with GitHub username + PAT.
 3. Verify server performs sync attempt automatically.
-4. Confirm local repository exists under `server/repos/<username>/<repo>/`.
+4. Confirm local repository exists under `server/repos/<username>/<owner>/<repo>/`.
 
 ## Scenario 2: Settings-change sync
 1. Open Settings > GitHub.

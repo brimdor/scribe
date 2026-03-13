@@ -30,7 +30,7 @@ Scribe is a local-first AI note workspace with GitHub-backed authentication, enc
 
 ### Repository sync
 
-- The assigned repository is cloned or pulled into `server/repos/<github-login>/<repo>/`.
+- The assigned repository is cloned or pulled into `server/repos/<github-login>/<owner>/<repo>/`.
 - Sync runs automatically on login.
 - Sync also runs after repository settings change.
 - Users can manually refresh the local checkout from Settings.

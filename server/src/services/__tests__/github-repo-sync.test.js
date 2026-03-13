@@ -35,6 +35,10 @@ function commitRepo(repoPath) {
   execFileSync('git', ['commit', '-m', 'init'], { cwd: repoPath });
 }
 
+function setOriginRemote(repoPath, remoteUrl = 'https://github.com/brimdor/ScribeVault.git') {
+  execFileSync('git', ['remote', 'add', 'origin', remoteUrl], { cwd: repoPath });
+}
+
 function createBareRemote(remotePath) {
   fs.mkdirSync(remotePath, { recursive: true });
   execFileSync('git', ['init', '--bare', '--initial-branch=main', remotePath]);
@@ -85,8 +89,9 @@ describe('github repo sync service', () => {
   });
 
   it('skips pull when local changes are present', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
+    setOriginRemote(repoPath);
     fs.writeFileSync(path.join(repoPath, 'draft.md'), 'local draft\n', 'utf8');
 
     const { syncAssignedRepoForUser } = await import('../github-repo-sync.js');
@@ -106,9 +111,10 @@ describe('github repo sync service', () => {
   });
 
   it('skips pull when upstream tracking is missing', async () => {
-    const repoPath = path.join(repoSyncRoot, 'brimdor', 'ScribeVault');
+    const repoPath = path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault');
     initRepo(repoPath);
     commitRepo(repoPath);
+    setOriginRemote(repoPath);
 
     const { syncAssignedRepoForUser } = await import('../github-repo-sync.js');
     const result = await syncAssignedRepoForUser({
@@ -131,10 +137,10 @@ describe('github repo sync service', () => {
     createBareRemote(remotePath);
     seedRemoteRepo(remotePath);
 
-    const userRoot = path.join(repoSyncRoot, 'brimdor');
-    fs.mkdirSync(userRoot, { recursive: true });
-    execFileSync('git', ['clone', remotePath, 'ScribeVault'], { cwd: userRoot });
-    const repoPath = path.join(userRoot, 'ScribeVault');
+    const ownerRoot = path.join(repoSyncRoot, 'brimdor', 'brimdor');
+    fs.mkdirSync(ownerRoot, { recursive: true });
+    execFileSync('git', ['clone', remotePath, 'ScribeVault'], { cwd: ownerRoot });
+    const repoPath = path.join(ownerRoot, 'ScribeVault');
     fs.mkdirSync(path.join(repoPath, 'Projects'), { recursive: true });
     fs.writeFileSync(path.join(repoPath, 'Projects', 'Scribe.md'), '# Scribe\n', 'utf8');
 
@@ -155,10 +161,31 @@ describe('github repo sync service', () => {
     expect(result).toEqual(expect.objectContaining({
       status: 'published',
       branch: 'main',
-      validatedRemote: true,
+      validatedRemote: false,
       stagedFiles: ['Projects/Scribe.md'],
     }));
     expect(result.remoteHeadSha).toBe(result.commitSha);
     expect(fs.readFileSync(path.join(clonedVerifyPath, 'Projects', 'Scribe.md'), 'utf8')).toContain('# Scribe');
+  });
+
+  it('migrates legacy checkouts into owner-scoped paths', async () => {
+    const legacyUserRoot = path.join(repoSyncRoot, 'brimdor');
+    fs.mkdirSync(legacyUserRoot, { recursive: true });
+    initRepo(path.join(legacyUserRoot, 'ScribeVault'));
+    commitRepo(path.join(legacyUserRoot, 'ScribeVault'));
+    setOriginRemote(path.join(legacyUserRoot, 'ScribeVault'));
+
+    const { syncAssignedRepoForUser } = await import('../github-repo-sync.js');
+    const result = await syncAssignedRepoForUser({
+      userId: 'user-1',
+      username: 'brimdor',
+      owner: 'brimdor',
+      repo: 'ScribeVault',
+      reason: 'manual-sync',
+    });
+
+    expect(result.localPath).toBe('brimdor/brimdor/ScribeVault');
+    expect(fs.existsSync(path.join(repoSyncRoot, 'brimdor', 'brimdor', 'ScribeVault', '.git'))).toBe(true);
+    expect(fs.existsSync(path.join(repoSyncRoot, 'brimdor', 'ScribeVault'))).toBe(false);
   });
 });

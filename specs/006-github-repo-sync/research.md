@@ -1,5 +1,5 @@
 ## Local Repository Root Strategy
-**Decision**: Store synced repositories under `server/repos/<github-login>/<repo-name>/` by default, configurable with `SCRIBE_REPO_SYNC_ROOT`.
+**Decision**: Store synced repositories under `server/repos/<github-login>/<owner>/<repo-name>/` by default, configurable with `SCRIBE_REPO_SYNC_ROOT`.
 **Rationale**: Keeps synced checkouts out of source paths and avoids accidental git tracking while preserving required user/repo folder hierarchy.
 **Alternatives Considered**:
 - Repository root (`<project>/<user>/<repo>`): simple but risks polluting tracked workspace.

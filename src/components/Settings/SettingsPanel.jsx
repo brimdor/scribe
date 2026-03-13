@@ -129,7 +129,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
     }
 
     const action = sync.status === 'cloned' ? 'cloned' : 'refreshed';
-    const target = sync.localPath || `${sync.username}/${sync.repo}`;
+    const target = sync.localPath || [sync.username, sync.owner, sync.repo].filter(Boolean).join('/');
     return `Repository ${action}: ${target}`;
   };
 

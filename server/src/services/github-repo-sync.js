@@ -24,6 +24,83 @@ function requireSafeSegment(value, label) {
   return normalized;
 }
 
+function normalizeGitHubRemoteUrl(value) {
+  return String(value || '').trim().replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
+}
+
+function buildExpectedGitHubRemoteUrls(owner, repo) {
+  const safeOwner = requireSafeSegment(owner, 'Repository owner');
+  const safeRepo = requireSafeSegment(repo, 'Repository name');
+  const slug = `${safeOwner}/${safeRepo}`;
+
+  return new Set([
+    normalizeGitHubRemoteUrl(`https://github.com/${slug}.git`),
+    normalizeGitHubRemoteUrl(`https://github.com/${slug}`),
+    normalizeGitHubRemoteUrl(`git@github.com:${slug}.git`),
+    normalizeGitHubRemoteUrl(`ssh://git@github.com/${slug}.git`),
+  ]);
+}
+
+function isGitHubRemoteUrl(value) {
+  const normalized = String(value || '').trim();
+  return /github\.com[:/]/i.test(normalized);
+}
+
+async function readOriginRemoteUrl(repoPath) {
+  const { stdout } = await runGitCommand(['-C', repoPath, 'remote', 'get-url', 'origin']);
+  return String(stdout || '').trim();
+}
+
+async function verifyRepoRemote(repoPath, assignment) {
+  const remoteUrl = await readOriginRemoteUrl(repoPath);
+  if (!remoteUrl) {
+    throw new Error(`Repository checkout at ${assignment.localPath} does not have an origin remote configured.`);
+  }
+
+  if (!isGitHubRemoteUrl(remoteUrl)) {
+    return {
+      ok: true,
+      remoteUrl,
+      validated: false,
+      reason: 'non-github-remote',
+    };
+  }
+
+  const expectedUrls = buildExpectedGitHubRemoteUrls(assignment.owner, assignment.repo);
+  const normalizedRemoteUrl = normalizeGitHubRemoteUrl(remoteUrl);
+  if (!expectedUrls.has(normalizedRemoteUrl)) {
+    throw new Error(
+      `Repository checkout at ${assignment.localPath} points to ${remoteUrl}, expected ${assignment.owner}/${assignment.repo}.`,
+    );
+  }
+
+  return {
+    ok: true,
+    remoteUrl,
+    validated: true,
+    reason: 'github-remote-match',
+  };
+}
+
+function moveRepoCheckout(sourcePath, destinationPath) {
+  fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+  fs.renameSync(sourcePath, destinationPath);
+}
+
+async function migrateLegacyCheckoutIfPresent(assignment) {
+  if (fs.existsSync(assignment.repoPath) || !fs.existsSync(assignment.legacyRepoPath)) {
+    return false;
+  }
+
+  if (!fs.existsSync(path.join(assignment.legacyRepoPath, '.git'))) {
+    throw new Error(`Legacy repository checkout is invalid at ${assignment.legacyLocalPath}.`);
+  }
+
+  await verifyRepoRemote(assignment.legacyRepoPath, assignment);
+  moveRepoCheckout(assignment.legacyRepoPath, assignment.repoPath);
+  return true;
+}
+
 function resolveAssignment(userId, { owner, repo } = {}) {
   const assignedOwner = normalizeSegment(owner) || normalizeSegment(getSetting(userId, 'githubOwner'));
   const assignedRepo = normalizeSegment(repo) || normalizeSegment(getSetting(userId, 'githubRepo'));
@@ -48,8 +125,11 @@ export function resolveAssignedRepoForUser({ userId, username, owner, repo }) {
   const { repoSyncRoot } = getConfig();
   const rootPath = path.resolve(repoSyncRoot);
   const userRoot = path.resolve(rootPath, safeUsername);
-  const repoPath = path.resolve(userRoot, assignment.repo);
-  const localPath = path.posix.join(safeUsername, assignment.repo);
+  const ownerRoot = path.resolve(userRoot, assignment.owner);
+  const repoPath = path.resolve(ownerRoot, assignment.repo);
+  const legacyRepoPath = path.resolve(userRoot, assignment.repo);
+  const localPath = path.posix.join(safeUsername, assignment.owner, assignment.repo);
+  const legacyLocalPath = path.posix.join(safeUsername, assignment.repo);
   const relativeToRoot = path.relative(rootPath, repoPath);
 
   if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
@@ -61,8 +141,11 @@ export function resolveAssignedRepoForUser({ userId, username, owner, repo }) {
     username: safeUsername,
     rootPath,
     userRoot,
+    ownerRoot,
     repoPath,
+    legacyRepoPath,
     localPath,
+    legacyLocalPath,
   };
 }
 
@@ -166,10 +249,14 @@ export async function publishRepoChangesForUser({
     throw new Error('GitHub token is unavailable for this user session.');
   }
 
+  await migrateLegacyCheckoutIfPresent(assignment);
+
   const gitDirPath = path.join(assignment.repoPath, '.git');
   if (!fs.existsSync(assignment.repoPath) || !fs.existsSync(gitDirPath)) {
     throw new Error(`Repository checkout is not available at ${assignment.localPath}. Run refresh first.`);
   }
+
+  const remoteCheck = await verifyRepoRemote(assignment.repoPath, assignment);
 
   const { stdout: branchName } = await runGitCommand(['-C', assignment.repoPath, 'rev-parse', '--abbrev-ref', 'HEAD']);
   if (branchName !== 'main') {
@@ -191,6 +278,8 @@ export async function publishRepoChangesForUser({
       localPath: assignment.localPath,
       branch: branchName,
       commitSha: '',
+      validatedRemote: remoteCheck.validated,
+      remoteUrl: remoteCheck.remoteUrl,
       message: 'Local checkout is behind origin/main. Refresh the repository before publishing changes.',
     };
   }
@@ -257,7 +346,8 @@ export async function publishRepoChangesForUser({
     branch: branchName,
     commitSha,
     remoteHeadSha,
-    validatedRemote: true,
+    validatedRemote: remoteCheck.validated,
+    remoteUrl: remoteCheck.remoteUrl,
     stagedFiles,
     message: `Published ${stagedFiles.length} file${stagedFiles.length === 1 ? '' : 's'} to origin/main.`,
   };
@@ -347,7 +437,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
     throw new Error('GitHub token is unavailable for this user session.');
   }
 
-  fs.mkdirSync(assignment.userRoot, { recursive: true });
+  fs.mkdirSync(assignment.ownerRoot, { recursive: true });
+  await migrateLegacyCheckoutIfPresent(assignment);
 
   const gitDirPath = path.join(assignment.repoPath, '.git');
   const repoExists = fs.existsSync(assignment.repoPath);
@@ -360,6 +451,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
       assignment.repoPath,
     ], { token });
 
+    const remoteCheck = await verifyRepoRemote(assignment.repoPath, assignment);
+
     return {
       status: 'cloned',
       reason,
@@ -368,6 +461,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
       repo: assignment.repo,
       username: assignment.username,
       localPath: assignment.localPath,
+      validatedRemote: remoteCheck.validated,
+      remoteUrl: remoteCheck.remoteUrl,
       message: 'Repository cloned successfully.',
     };
   }
@@ -375,6 +470,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
   if (!hasGitMetadata) {
     throw new Error(`Target path exists but is not a git repository: ${assignment.localPath}`);
   }
+
+  const remoteCheck = await verifyRepoRemote(assignment.repoPath, assignment);
 
   const pullSafety = await evaluatePullSafety(assignment.repoPath, token);
   if (!pullSafety.canPull) {
@@ -386,6 +483,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
       repo: assignment.repo,
       username: assignment.username,
       localPath: assignment.localPath,
+      validatedRemote: remoteCheck.validated,
+      remoteUrl: remoteCheck.remoteUrl,
       message: pullSafety.message,
     };
   }
@@ -405,6 +504,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
     repo: assignment.repo,
     username: assignment.username,
     localPath: assignment.localPath,
+    validatedRemote: remoteCheck.validated,
+    remoteUrl: remoteCheck.remoteUrl,
     message: 'Repository updated successfully.',
   };
 }
