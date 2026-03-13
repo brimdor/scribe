@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 import { resolveAssignedRepoForUser, runGitCommand } from './github-repo-sync.js';
 
@@ -23,16 +23,16 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function ensureAssignedRepo(target) {
+async function ensureAssignedRepo(target) {
   if (!target) {
     throw new Error('No repository assignment configured.');
   }
 
-  if (!fs.existsSync(target.repoPath)) {
+  if (!await pathExists(target.repoPath)) {
     throw new Error(`Repository checkout is not available at ${target.localPath}. Run sync first.`);
   }
 
-  if (!fs.existsSync(path.join(target.repoPath, '.git'))) {
+  if (!await pathExists(path.join(target.repoPath, '.git'))) {
     throw new Error(`Repository checkout is invalid at ${target.localPath}.`);
   }
 }
@@ -95,6 +95,26 @@ function trimOutput(value, maxChars = MAX_GIT_OUTPUT_CHARS) {
   return normalized.length > maxChars ? `${normalized.slice(0, maxChars - 1)}…` : normalized;
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fsPromises.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readSortedEntries(basePath) {
+  const entries = await fsPromises.readdir(basePath, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.name !== '.git')
+    .sort((left, right) => {
+      if (left.isDirectory() && !right.isDirectory()) return -1;
+      if (!left.isDirectory() && right.isDirectory()) return 1;
+      return left.name.localeCompare(right.name);
+    });
+}
+
 function buildToolTarget(target) {
   return {
     owner: target.owner,
@@ -118,18 +138,12 @@ function countLinesBefore(content, matchIndex) {
   return content.slice(0, matchIndex).split(/\r?\n/).length;
 }
 
-function collectTextSearchResults(basePath, relativeDir, query, limit, results) {
+async function collectTextSearchResults(basePath, relativeDir, query, limit, results) {
   if (results.length >= limit) {
     return;
   }
 
-  const entries = fs.readdirSync(basePath, { withFileTypes: true })
-    .filter((entry) => entry.name !== '.git')
-    .sort((left, right) => {
-      if (left.isDirectory() && !right.isDirectory()) return -1;
-      if (!left.isDirectory() && right.isDirectory()) return 1;
-      return left.name.localeCompare(right.name);
-    });
+  const entries = await readSortedEntries(basePath);
 
   for (const entry of entries) {
     if (results.length >= limit) {
@@ -140,7 +154,7 @@ function collectTextSearchResults(basePath, relativeDir, query, limit, results) 
     const nextAbsolutePath = path.join(basePath, entry.name);
 
     if (entry.isDirectory()) {
-      collectTextSearchResults(nextAbsolutePath, nextRelativePath, query, limit, results);
+      await collectTextSearchResults(nextAbsolutePath, nextRelativePath, query, limit, results);
       continue;
     }
 
@@ -148,7 +162,7 @@ function collectTextSearchResults(basePath, relativeDir, query, limit, results) 
       continue;
     }
 
-    const buffer = fs.readFileSync(nextAbsolutePath);
+    const buffer = await fsPromises.readFile(nextAbsolutePath);
     if (isLikelyBinary(buffer)) {
       continue;
     }
@@ -169,18 +183,12 @@ function collectTextSearchResults(basePath, relativeDir, query, limit, results) 
   }
 }
 
-function collectMarkdownFiles(basePath, relativeDir, results) {
+async function collectMarkdownFiles(basePath, relativeDir, results) {
   if (results.length >= MAX_MARKDOWN_FILES) {
     return;
   }
 
-  const entries = fs.readdirSync(basePath, { withFileTypes: true })
-    .filter((entry) => entry.name !== '.git')
-    .sort((left, right) => {
-      if (left.isDirectory() && !right.isDirectory()) return -1;
-      if (!left.isDirectory() && right.isDirectory()) return 1;
-      return left.name.localeCompare(right.name);
-    });
+  const entries = await readSortedEntries(basePath);
 
   for (const entry of entries) {
     if (results.length >= MAX_MARKDOWN_FILES) {
@@ -191,7 +199,7 @@ function collectMarkdownFiles(basePath, relativeDir, results) {
     const nextAbsolutePath = path.join(basePath, entry.name);
 
     if (entry.isDirectory()) {
-      collectMarkdownFiles(nextAbsolutePath, nextRelativePath, results);
+      await collectMarkdownFiles(nextAbsolutePath, nextRelativePath, results);
       continue;
     }
 
@@ -351,45 +359,39 @@ function buildNoteSummary(filePath, content, stat = null) {
   };
 }
 
-function getMarkdownFilesForTarget(target, dir = '') {
+async function getMarkdownFilesForTarget(target, dir = '') {
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, dir, 'Directory path', { allowEmpty: true });
-  if (!fs.existsSync(absolutePath)) {
+  if (!await pathExists(absolutePath)) {
     throw new Error(`Directory path does not exist: ${normalizedPath || '.'}`);
   }
 
-  const stat = fs.statSync(absolutePath);
+  const stat = await fsPromises.stat(absolutePath);
   if (!stat.isDirectory()) {
     throw new Error(`Directory path is not a folder: ${normalizedPath || '.'}`);
   }
 
   const markdownFiles = [];
-  collectMarkdownFiles(absolutePath, normalizedPath, markdownFiles);
+  await collectMarkdownFiles(absolutePath, normalizedPath, markdownFiles);
   return markdownFiles;
 }
 
-export function listRepoTreeForUser({ userId, username, owner, repo, dir = '', limit = DEFAULT_TREE_LIMIT }) {
+export async function listRepoTreeForUser({ userId, username, owner, repo, dir = '', limit = DEFAULT_TREE_LIMIT }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const safeLimit = Math.min(toPositiveInt(limit, DEFAULT_TREE_LIMIT), MAX_TREE_LIMIT);
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, dir, 'Directory path', { allowEmpty: true });
 
-  if (!fs.existsSync(absolutePath)) {
+  if (!await pathExists(absolutePath)) {
     throw new Error(`Directory path does not exist: ${normalizedPath || '.'}`);
   }
 
-  const stat = fs.statSync(absolutePath);
+  const stat = await fsPromises.stat(absolutePath);
   if (!stat.isDirectory()) {
     throw new Error(`Directory path is not a folder: ${normalizedPath || '.'}`);
   }
 
-  const dirEntries = fs.readdirSync(absolutePath, { withFileTypes: true })
-    .filter((entry) => entry.name !== '.git')
-    .sort((left, right) => {
-      if (left.isDirectory() && !right.isDirectory()) return -1;
-      if (!left.isDirectory() && right.isDirectory()) return 1;
-      return left.name.localeCompare(right.name);
-    });
+  const dirEntries = await readSortedEntries(absolutePath);
 
   const visibleEntries = dirEntries.slice(0, safeLimit).map((entry) => ({
     type: entry.isDirectory() ? 'dir' : entry.isFile() ? 'file' : 'other',
@@ -405,7 +407,7 @@ export function listRepoTreeForUser({ userId, username, owner, repo, dir = '', l
   };
 }
 
-export function readRepoFileForUser({
+export async function readRepoFileForUser({
   userId,
   username,
   owner,
@@ -415,22 +417,22 @@ export function readRepoFileForUser({
   maxLines = DEFAULT_MAX_LINES,
 }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const safeBytes = Math.min(toPositiveInt(maxBytes, DEFAULT_MAX_BYTES), MAX_BYTES_LIMIT);
   const safeLines = Math.min(toPositiveInt(maxLines, DEFAULT_MAX_LINES), MAX_LINES_LIMIT);
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, filePath, 'File path', { allowEmpty: false });
 
-  if (!fs.existsSync(absolutePath)) {
+  if (!await pathExists(absolutePath)) {
     throw new Error(`File path does not exist: ${normalizedPath}`);
   }
 
-  const stat = fs.statSync(absolutePath);
+  const stat = await fsPromises.stat(absolutePath);
   if (!stat.isFile()) {
     throw new Error(`File path is not a regular file: ${normalizedPath}`);
   }
 
-  const originalBuffer = fs.readFileSync(absolutePath);
+  const originalBuffer = await fsPromises.readFile(absolutePath);
   if (isLikelyBinary(originalBuffer)) {
     throw new Error(`Binary file is not supported for assistant context: ${normalizedPath}`);
   }
@@ -452,9 +454,9 @@ export function readRepoFileForUser({
   };
 }
 
-export function searchRepoFilesForUser({ userId, username, owner, repo, query, dir = '', limit = DEFAULT_SEARCH_LIMIT }) {
+export async function searchRepoFilesForUser({ userId, username, owner, repo, query, dir = '', limit = DEFAULT_SEARCH_LIMIT }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const normalizedQuery = String(query || '').trim().toLowerCase();
   if (!normalizedQuery) {
@@ -463,17 +465,17 @@ export function searchRepoFilesForUser({ userId, username, owner, repo, query, d
 
   const safeLimit = clamp(limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, dir, 'Directory path', { allowEmpty: true });
-  if (!fs.existsSync(absolutePath)) {
+  if (!await pathExists(absolutePath)) {
     throw new Error(`Directory path does not exist: ${normalizedPath || '.'}`);
   }
 
-  const stat = fs.statSync(absolutePath);
+  const stat = await fsPromises.stat(absolutePath);
   if (!stat.isDirectory()) {
     throw new Error(`Directory path is not a folder: ${normalizedPath || '.'}`);
   }
 
   const results = [];
-  collectTextSearchResults(absolutePath, normalizedPath, normalizedQuery, safeLimit, results);
+  await collectTextSearchResults(absolutePath, normalizedPath, normalizedQuery, safeLimit, results);
 
   return {
     ...buildToolTarget(target),
@@ -484,7 +486,7 @@ export function searchRepoFilesForUser({ userId, username, owner, repo, query, d
   };
 }
 
-export function writeRepoFileForUser({
+export async function writeRepoFileForUser({
   userId,
   username,
   owner,
@@ -494,7 +496,7 @@ export function writeRepoFileForUser({
   createDirectories = true,
 }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   if (typeof content !== 'string') {
     throw new Error('Text content is required.');
@@ -507,20 +509,20 @@ export function writeRepoFileForUser({
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, filePath, 'File path', { allowEmpty: false });
   const parentDir = path.dirname(absolutePath);
 
-  if (!fs.existsSync(parentDir)) {
+  if (!await pathExists(parentDir)) {
     if (!createDirectories) {
       throw new Error(`Parent directory does not exist for file path: ${normalizedPath}`);
     }
 
-    fs.mkdirSync(parentDir, { recursive: true });
+    await fsPromises.mkdir(parentDir, { recursive: true });
   }
 
-  if (fs.existsSync(absolutePath) && !fs.statSync(absolutePath).isFile()) {
+  const existed = await pathExists(absolutePath);
+  if (existed && !(await fsPromises.stat(absolutePath)).isFile()) {
     throw new Error(`File path is not a regular file: ${normalizedPath}`);
   }
 
-  const existed = fs.existsSync(absolutePath);
-  fs.writeFileSync(absolutePath, content, 'utf8');
+  await fsPromises.writeFile(absolutePath, content, 'utf8');
 
   return {
     ...buildToolTarget(target),
@@ -531,7 +533,7 @@ export function writeRepoFileForUser({
   };
 }
 
-export function moveRepoFileForUser({
+export async function moveRepoFileForUser({
   userId,
   username,
   owner,
@@ -541,7 +543,7 @@ export function moveRepoFileForUser({
   createDirectories = true,
 }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const source = resolveWithinRepo(target.repoPath, fromPath, 'Source path', { allowEmpty: false });
   const destination = resolveWithinRepo(target.repoPath, toPath, 'Destination path', { allowEmpty: false });
@@ -550,30 +552,30 @@ export function moveRepoFileForUser({
     throw new Error('Destination path must be different from the source path.');
   }
 
-  if (!fs.existsSync(source.absolutePath)) {
+  if (!await pathExists(source.absolutePath)) {
     throw new Error(`Source path does not exist: ${source.normalizedPath}`);
   }
 
-  const sourceStat = fs.statSync(source.absolutePath);
+  const sourceStat = await fsPromises.stat(source.absolutePath);
   if (!sourceStat.isFile()) {
     throw new Error(`Source path is not a regular file: ${source.normalizedPath}`);
   }
 
   const parentDir = path.dirname(destination.absolutePath);
-  if (!fs.existsSync(parentDir)) {
+  if (!await pathExists(parentDir)) {
     if (!createDirectories) {
       throw new Error(`Parent directory does not exist for destination path: ${destination.normalizedPath}`);
     }
 
-    fs.mkdirSync(parentDir, { recursive: true });
+    await fsPromises.mkdir(parentDir, { recursive: true });
   }
 
-  const existed = fs.existsSync(destination.absolutePath);
-  if (existed && !fs.statSync(destination.absolutePath).isFile()) {
+  const existed = await pathExists(destination.absolutePath);
+  if (existed && !(await fsPromises.stat(destination.absolutePath)).isFile()) {
     throw new Error(`Destination path is not a regular file: ${destination.normalizedPath}`);
   }
 
-  fs.renameSync(source.absolutePath, destination.absolutePath);
+  await fsPromises.rename(source.absolutePath, destination.absolutePath);
 
   return {
     ...buildToolTarget(target),
@@ -584,21 +586,21 @@ export function moveRepoFileForUser({
   };
 }
 
-export function deleteRepoFileForUser({ userId, username, owner, repo, filePath }) {
+export async function deleteRepoFileForUser({ userId, username, owner, repo, filePath }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, filePath, 'File path', { allowEmpty: false });
-  if (!fs.existsSync(absolutePath)) {
+  if (!await pathExists(absolutePath)) {
     throw new Error(`File path does not exist: ${normalizedPath}`);
   }
 
-  const stat = fs.statSync(absolutePath);
+  const stat = await fsPromises.stat(absolutePath);
   if (!stat.isFile()) {
     throw new Error(`File path is not a regular file: ${normalizedPath}`);
   }
 
-  fs.unlinkSync(absolutePath);
+  await fsPromises.unlink(absolutePath);
 
   return {
     ...buildToolTarget(target),
@@ -608,17 +610,17 @@ export function deleteRepoFileForUser({ userId, username, owner, repo, filePath 
   };
 }
 
-export function listRepoNoteTagsForUser({ userId, username, owner, repo }) {
+export async function listRepoNoteTagsForUser({ userId, username, owner, repo }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
-  const markdownFiles = getMarkdownFilesForTarget(target);
+  const markdownFiles = await getMarkdownFilesForTarget(target);
 
   const tagMap = new Map();
   let scannedFiles = 0;
 
   for (const file of markdownFiles) {
-    const buffer = fs.readFileSync(file.absolutePath);
+    const buffer = await fsPromises.readFile(file.absolutePath);
     if (isLikelyBinary(buffer)) {
       continue;
     }
@@ -655,16 +657,22 @@ export function listRepoNoteTagsForUser({ userId, username, owner, repo }) {
   };
 }
 
-export function listRepoNotesForUser({ userId, username, owner, repo, dir = '', limit = DEFAULT_NOTE_LIST_LIMIT }) {
+export async function listRepoNotesForUser({ userId, username, owner, repo, dir = '', limit = DEFAULT_NOTE_LIST_LIMIT }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
-  const markdownFiles = getMarkdownFilesForTarget(target, dir);
+  const markdownFiles = await getMarkdownFilesForTarget(target, dir);
   const safeLimit = clamp(limit, DEFAULT_NOTE_LIST_LIMIT, MAX_NOTE_LIST_LIMIT);
 
-  const notes = markdownFiles
+  const notes = await Promise.all(markdownFiles
     .slice(0, safeLimit)
-    .map((file) => buildNoteSummary(file.path, fs.readFileSync(file.absolutePath, 'utf8'), fs.statSync(file.absolutePath)));
+    .map(async (file) => {
+      const [content, stat] = await Promise.all([
+        fsPromises.readFile(file.absolutePath, 'utf8'),
+        fsPromises.stat(file.absolutePath),
+      ]);
+      return buildNoteSummary(file.path, content, stat);
+    }));
 
   return {
     ...buildToolTarget(target),
@@ -674,16 +682,16 @@ export function listRepoNotesForUser({ userId, username, owner, repo, dir = '', 
   };
 }
 
-export function findRepoNotesByTagForUser({ userId, username, owner, repo, tag, limit = DEFAULT_NOTE_LIST_LIMIT }) {
+export async function findRepoNotesByTagForUser({ userId, username, owner, repo, tag, limit = DEFAULT_NOTE_LIST_LIMIT }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const normalizedTag = normalizeTag(tag);
   if (!normalizedTag) {
     throw new Error('Tag is required.');
   }
 
-  const markdownFiles = getMarkdownFilesForTarget(target);
+  const markdownFiles = await getMarkdownFilesForTarget(target);
   const safeLimit = clamp(limit, DEFAULT_NOTE_LIST_LIMIT, MAX_NOTE_LIST_LIMIT);
   const notes = [];
 
@@ -692,8 +700,10 @@ export function findRepoNotesByTagForUser({ userId, username, owner, repo, tag, 
       break;
     }
 
-    const stat = fs.statSync(file.absolutePath);
-    const content = fs.readFileSync(file.absolutePath, 'utf8');
+    const [stat, content] = await Promise.all([
+      fsPromises.stat(file.absolutePath),
+      fsPromises.readFile(file.absolutePath, 'utf8'),
+    ]);
     const summary = buildNoteSummary(file.path, content, stat);
 
     if (summary.tags.includes(normalizedTag)) {
@@ -709,25 +719,25 @@ export function findRepoNotesByTagForUser({ userId, username, owner, repo, tag, 
   };
 }
 
-export function readRepoNoteFrontmatterForUser({ userId, username, owner, repo, filePath }) {
+export async function readRepoNoteFrontmatterForUser({ userId, username, owner, repo, filePath }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const { absolutePath, normalizedPath } = resolveWithinRepo(target.repoPath, filePath, 'File path', { allowEmpty: false });
   if (!normalizedPath.toLowerCase().endsWith('.md')) {
     throw new Error('Note frontmatter is only supported for markdown files.');
   }
 
-  if (!fs.existsSync(absolutePath)) {
+  if (!await pathExists(absolutePath)) {
     throw new Error(`File path does not exist: ${normalizedPath}`);
   }
 
-  const stat = fs.statSync(absolutePath);
+  const stat = await fsPromises.stat(absolutePath);
   if (!stat.isFile()) {
     throw new Error(`File path is not a regular file: ${normalizedPath}`);
   }
 
-  const content = fs.readFileSync(absolutePath, 'utf8');
+  const content = await fsPromises.readFile(absolutePath, 'utf8');
   const summary = buildNoteSummary(normalizedPath, content, stat);
 
   return {
@@ -738,7 +748,7 @@ export function readRepoNoteFrontmatterForUser({ userId, username, owner, repo, 
 
 export async function getRepoGitStatusForUser({ userId, username, owner, repo }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const { stdout } = await runGitCommand(['-C', target.repoPath, 'status', '--short', '--branch']);
   const lines = stdout.split(/\r?\n/).filter(Boolean);
@@ -754,7 +764,7 @@ export async function getRepoGitStatusForUser({ userId, username, owner, repo })
 
 export async function getRepoGitDiffForUser({ userId, username, owner, repo, filePath = '' }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const args = ['-C', target.repoPath, 'diff'];
   let normalizedPath = '';
@@ -775,7 +785,7 @@ export async function getRepoGitDiffForUser({ userId, username, owner, repo, fil
 
 export async function getRepoGitLogForUser({ userId, username, owner, repo, limit = DEFAULT_GIT_LOG_LIMIT }) {
   const target = resolveAssignedRepoForUser({ userId, username, owner, repo });
-  ensureAssignedRepo(target);
+  await ensureAssignedRepo(target);
 
   const safeLimit = clamp(limit, DEFAULT_GIT_LOG_LIMIT, MAX_GIT_LOG_LIMIT);
   const { stdout } = await runGitCommand([

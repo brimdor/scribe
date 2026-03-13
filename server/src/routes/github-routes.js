@@ -125,7 +125,7 @@ router.post('/publish', async (req, res) => {
 
 router.get('/repo/tree', async (req, res) => {
   try {
-    const tree = listRepoTreeForUser({
+    const tree = await listRepoTreeForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -145,7 +145,7 @@ router.get('/repo/tree', async (req, res) => {
 
 router.get('/repo/file', async (req, res) => {
   try {
-    const file = readRepoFileForUser({
+    const file = await readRepoFileForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -166,7 +166,7 @@ router.get('/repo/file', async (req, res) => {
 
 router.put('/repo/file', async (req, res) => {
   try {
-    const file = writeRepoFileForUser({
+    const file = await writeRepoFileForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.body?.owner,
@@ -187,7 +187,7 @@ router.put('/repo/file', async (req, res) => {
 
 router.patch('/repo/file', async (req, res) => {
   try {
-    const file = moveRepoFileForUser({
+    const file = await moveRepoFileForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.body?.owner,
@@ -208,7 +208,7 @@ router.patch('/repo/file', async (req, res) => {
 
 router.delete('/repo/file', async (req, res) => {
   try {
-    const file = deleteRepoFileForUser({
+    const file = await deleteRepoFileForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -227,7 +227,7 @@ router.delete('/repo/file', async (req, res) => {
 
 router.get('/repo/search', async (req, res) => {
   try {
-    const search = searchRepoFilesForUser({
+    const search = await searchRepoFilesForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -248,7 +248,7 @@ router.get('/repo/search', async (req, res) => {
 
 router.get('/repo/note-tags', async (req, res) => {
   try {
-    const noteTags = listRepoNoteTagsForUser({
+    const noteTags = await listRepoNoteTagsForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -266,7 +266,7 @@ router.get('/repo/note-tags', async (req, res) => {
 
 router.get('/repo/notes', async (req, res) => {
   try {
-    const notes = listRepoNotesForUser({
+    const notes = await listRepoNotesForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -286,7 +286,7 @@ router.get('/repo/notes', async (req, res) => {
 
 router.get('/repo/note/frontmatter', async (req, res) => {
   try {
-    const note = readRepoNoteFrontmatterForUser({
+    const note = await readRepoNoteFrontmatterForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,
@@ -305,7 +305,7 @@ router.get('/repo/note/frontmatter', async (req, res) => {
 
 router.get('/repo/notes/by-tag', async (req, res) => {
   try {
-    const notes = findRepoNotesByTagForUser({
+    const notes = await findRepoNotesByTagForUser({
       userId: req.auth.userId,
       username: req.auth.user.login,
       owner: req.query.owner,

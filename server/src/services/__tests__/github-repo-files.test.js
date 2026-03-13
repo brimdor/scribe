@@ -60,8 +60,8 @@ describe('github repo files service', () => {
     fs.writeFileSync(path.join(repoPath, 'docs', 'guide.md'), 'Guide\n', 'utf8');
 
     const { listRepoTreeForUser, readRepoFileForUser } = await import('../github-repo-files.js');
-    const tree = listRepoTreeForUser({ userId: 'user-1', username: 'brimdor' });
-    const file = readRepoFileForUser({ userId: 'user-1', username: 'brimdor', filePath: 'README.md' });
+    const tree = await listRepoTreeForUser({ userId: 'user-1', username: 'brimdor' });
+    const file = await readRepoFileForUser({ userId: 'user-1', username: 'brimdor', filePath: 'README.md' });
 
     expect(tree.entries.length).toBeGreaterThan(0);
     expect(tree.entries.some((entry) => entry.path === 'README.md')).toBe(true);
@@ -87,8 +87,8 @@ describe('github repo files service', () => {
       writeRepoFileForUser,
     } = await import('../github-repo-files.js');
 
-    const search = searchRepoFilesForUser({ userId: 'user-1', username: 'brimdor', query: 'search target' });
-    const written = writeRepoFileForUser({
+    const search = await searchRepoFilesForUser({ userId: 'user-1', username: 'brimdor', query: 'search target' });
+    const written = await writeRepoFileForUser({
       userId: 'user-1',
       username: 'brimdor',
       filePath: 'notes/todo.md',
@@ -125,7 +125,7 @@ describe('github repo files service', () => {
     fs.writeFileSync(path.join(repoPath, 'README.md'), 'General repo docs with #overview\n', 'utf8');
 
     const { listRepoNoteTagsForUser } = await import('../github-repo-files.js');
-    const summary = listRepoNoteTagsForUser({ userId: 'user-1', username: 'brimdor' });
+    const summary = await listRepoNoteTagsForUser({ userId: 'user-1', username: 'brimdor' });
 
     expect(summary.scannedFiles).toBe(2);
     expect(summary.tags).toEqual(expect.arrayContaining([
@@ -159,9 +159,9 @@ describe('github repo files service', () => {
       readRepoNoteFrontmatterForUser,
     } = await import('../github-repo-files.js');
 
-    const notes = listRepoNotesForUser({ userId: 'user-1', username: 'brimdor', limit: 10 });
-    const tagged = findRepoNotesByTagForUser({ userId: 'user-1', username: 'brimdor', tag: 'project', limit: 10 });
-    const note = readRepoNoteFrontmatterForUser({ userId: 'user-1', username: 'brimdor', filePath: 'Projects/Watchtower.md' });
+    const notes = await listRepoNotesForUser({ userId: 'user-1', username: 'brimdor', limit: 10 });
+    const tagged = await findRepoNotesByTagForUser({ userId: 'user-1', username: 'brimdor', tag: 'project', limit: 10 });
+    const note = await readRepoNoteFrontmatterForUser({ userId: 'user-1', username: 'brimdor', filePath: 'Projects/Watchtower.md' });
 
     expect(notes.notes).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: 'Projects/Watchtower.md', title: 'Watchtower' }),
@@ -191,13 +191,13 @@ describe('github repo files service', () => {
       moveRepoFileForUser,
     } = await import('../github-repo-files.js');
 
-    const moved = moveRepoFileForUser({
+    const moved = await moveRepoFileForUser({
       userId: 'user-1',
       username: 'brimdor',
       fromPath: 'Inbox/draft-note.md',
       toPath: 'Archive/draft-note.md',
     });
-    const deleted = deleteRepoFileForUser({
+    const deleted = await deleteRepoFileForUser({
       userId: 'user-1',
       username: 'brimdor',
       filePath: 'Inbox/delete-me.md',
@@ -222,11 +222,11 @@ describe('github repo files service', () => {
 
     const { readRepoFileForUser } = await import('../github-repo-files.js');
 
-    expect(() => readRepoFileForUser({
+    await expect(readRepoFileForUser({
       userId: 'user-1',
       username: 'brimdor',
       filePath: '../secrets.txt',
-    })).toThrow(/invalid path segment|outside the repository/i);
+    })).rejects.toThrow(/invalid path segment|outside the repository/i);
   });
 
   it('rejects path traversal when writing files', async () => {
@@ -235,11 +235,11 @@ describe('github repo files service', () => {
 
     const { writeRepoFileForUser } = await import('../github-repo-files.js');
 
-    expect(() => writeRepoFileForUser({
+    await expect(writeRepoFileForUser({
       userId: 'user-1',
       username: 'brimdor',
       filePath: '../notes.md',
       content: 'secret',
-    })).toThrow(/invalid path segment|outside the repository/i);
+    })).rejects.toThrow(/invalid path segment|outside the repository/i);
   });
 });
