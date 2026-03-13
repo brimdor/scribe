@@ -177,6 +177,25 @@
       margin-bottom: 8px;
     }
 
+    .finding.is-complete {
+      border-color: rgba(120, 224, 143, 0.45);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(120, 224, 143, 0.12);
+    }
+
+    .status-badge {
+      display: inline-block;
+      margin-left: 10px;
+      padding: 0.36rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(120, 224, 143, 0.16);
+      color: var(--success);
+      vertical-align: middle;
+    }
+
     .meta {
       color: var(--text-dim);
       font-size: 0.92rem;
@@ -296,9 +315,9 @@
     <section id="findings" class="section">
       <h2>Prioritized findings</h2>
       <div class="grid finding-grid">
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity critical">Critical</span>
-          <h3>1. Repository checkout paths can collide across owners</h3>
+          <h3>1. Repository checkout paths can collide across owners <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: local repo sync and publish safety</p>
           <p>
             The resolved checkout path uses <code>&lt;username&gt;/&lt;repo&gt;</code> but does not include the repository owner. That means
@@ -320,9 +339,9 @@
           </p>
         </article>
 
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity high">High</span>
-          <h3>2. Encrypted storage falls back to a hard-coded development key</h3>
+          <h3>2. Encrypted storage falls back to a hard-coded development key <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: token and settings protection</p>
           <p>
             If <code>SCRIBE_DB_ENCRYPTION_KEY</code> is not set, the server falls back to <code>change-me-local-dev-key</code>. That means encrypted-at-rest data is not actually protected in any environment where the variable is forgotten.
@@ -340,9 +359,9 @@
           </p>
         </article>
 
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity high">High</span>
-          <h3>3. Manual provider credentials and requests live in the browser</h3>
+          <h3>3. Manual provider credentials and requests live in the browser <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: AI provider security and production reliability</p>
           <p>
             Manual OpenAI-compatible provider requests are initialized client-side and use <code>dangerouslyAllowBrowser: true</code>. The effective API key also lives in frontend state and storage flows.
@@ -363,9 +382,9 @@
           </p>
         </article>
 
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity high">High</span>
-          <h3>4. Publish can stage and commit unrelated local changes</h3>
+          <h3>4. Publish can stage and commit unrelated local changes <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: note publishing correctness</p>
           <p>
             When no explicit file list is provided, publish stages the entire working tree with <code>git add -A</code>. A single note publish can therefore sweep in unrelated edits already present in the checkout.
@@ -383,9 +402,9 @@
           </p>
         </article>
 
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity high">High</span>
-          <h3>5. Repo inspection and indexing logic is synchronous and blocks the Node process</h3>
+          <h3>5. Repo inspection and indexing logic is synchronous and blocks the Node process <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: scalability and concurrent request latency</p>
           <p>
             Core repository traversal relies heavily on <code>fs.readdirSync</code> and <code>fs.readFileSync</code> recursion. This keeps the event loop busy while large trees, note scans, tag extraction, and file search operations run.
@@ -403,9 +422,9 @@
           </p>
         </article>
 
-        <article class="finding">
+        <article class="finding is-complete">
           <span class="severity medium">Medium</span>
-          <h3>6. Core logic is concentrated in several large multi-responsibility files</h3>
+          <h3>6. Core logic is concentrated in several large multi-responsibility files <span class="status-badge">Complete</span></h3>
           <p class="meta">Affected area: maintainability and testability</p>
           <p>
             A few files already function as orchestration hubs for unrelated behavior. They are readable today, but they are the main future change-risk points.
