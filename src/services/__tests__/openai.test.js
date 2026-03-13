@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const manualCreate = vi.fn();
-const openAIConstructor = vi.fn(() => ({
-  chat: {
-    completions: {
-      create: manualCreate,
-    },
-  },
-}));
+const manualJsonRequests = [];
+const manualStreamRequests = [];
+const manualJsonResponses = [];
+const manualStreamResponses = [];
 
 const getValidOpenAIOAuthSession = vi.fn(async (session) => session);
 const quickOpenAIOAuthChat = vi.fn(async () => 'OAuth title');
@@ -45,9 +41,73 @@ const getLatestUserPrompt = vi.fn((messages) => {
   return userMessage?.content || '';
 });
 
-vi.mock('openai', () => ({
-  default: openAIConstructor,
-}));
+function jsonResponse(status, payload) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (headerName) => (headerName.toLowerCase() === 'content-type' ? 'application/json' : ''),
+    },
+    json: async () => payload,
+    text: async () => JSON.stringify(payload),
+  };
+}
+
+function createStreamResponse(status, events) {
+  const encoder = new TextEncoder();
+  const chunks = events.map((event) => encoder.encode(`event: ${event.event}\ndata: ${JSON.stringify(event.payload)}\n\n`));
+  let index = 0;
+
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (headerName) => (headerName.toLowerCase() === 'content-type' ? 'text/event-stream' : ''),
+    },
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (index >= chunks.length) {
+              return { done: true, value: undefined };
+            }
+
+            const value = chunks[index];
+            index += 1;
+            return { done: false, value };
+          },
+        };
+      },
+    },
+    text: async () => '',
+    json: async () => ({ error: 'stream response has no json body' }),
+  };
+}
+
+function createFetchMock() {
+  return vi.fn(async (url, options = {}) => {
+    if (url !== '/api/ai/manual/chat') {
+      throw new Error(`Unhandled fetch request: ${url}`);
+    }
+
+    const body = options.body ? JSON.parse(options.body) : {};
+    if (body.stream) {
+      manualStreamRequests.push(body);
+      const next = manualStreamResponses.shift();
+      if (!next) {
+        throw new Error('Missing manual stream response fixture.');
+      }
+      return createStreamResponse(next.status ?? 200, next.events);
+    }
+
+    manualJsonRequests.push(body);
+    const next = manualJsonResponses.shift();
+    if (!next) {
+      throw new Error('Missing manual json response fixture.');
+    }
+    return jsonResponse(next.status ?? 200, next.payload);
+  });
+}
 
 vi.mock('../openai-oauth', () => ({
   completeOpenAIOAuthChat,
@@ -78,8 +138,12 @@ vi.mock('../github', () => ({
 describe('openai service', () => {
   beforeEach(() => {
     vi.resetModules();
-    manualCreate.mockReset();
-    openAIConstructor.mockClear();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('fetch', createFetchMock());
+    manualJsonRequests.length = 0;
+    manualStreamRequests.length = 0;
+    manualJsonResponses.length = 0;
+    manualStreamResponses.length = 0;
     quickOpenAIOAuthChat.mockReset();
     quickOpenAIOAuthChat.mockResolvedValue('OAuth title');
     completeOpenAIOAuthChat.mockReset();
@@ -113,8 +177,8 @@ describe('openai service', () => {
     });
   });
 
-  it('uses fallback api key when the provided key is blank', async () => {
-    const { initOpenAI, resolveOpenAIConfig } = await import('../openai');
+  it('uses fallback api key metadata when the provided key is blank', async () => {
+    const { initOpenAI, resolveOpenAIConfig, getOpenAIClient } = await import('../openai');
 
     expect(resolveOpenAIConfig({ apiKey: '   ', baseURL: 'http://localhost:11434/v1/' })).toEqual({
       provider: 'manual',
@@ -126,11 +190,7 @@ describe('openai service', () => {
 
     initOpenAI({ apiKey: '', baseURL: 'http://localhost:11434/v1/' });
 
-    expect(openAIConstructor).toHaveBeenCalledWith(expect.objectContaining({
-      apiKey: '1234',
-      baseURL: 'http://localhost:11434/v1',
-      dangerouslyAllowBrowser: true,
-    }));
+    expect(getOpenAIClient()).toEqual({ provider: 'manual-proxy' });
   });
 
   it('uses oauth mode when an active session exists', async () => {
@@ -287,18 +347,19 @@ describe('openai service', () => {
     }));
   });
 
-  it('runs reusable tool orchestration before manual streaming', async () => {
+  it('runs reusable tool orchestration before manual streaming via the backend proxy', async () => {
     shouldUseRepoKnowledgeBase.mockReturnValueOnce(true);
     shouldRequireToolUsage.mockReturnValueOnce(true);
     buildRepoContextForPrompt.mockResolvedValueOnce({
       contextText: 'Repository note tags:\n- project (2)',
     });
-    manualCreate.mockResolvedValueOnce((async function* stream() {
-      yield {
-        model: 'gpt-4o-mini',
-        choices: [{ delta: { content: 'Hello from tools' } }],
-      };
-    }()));
+    manualStreamResponses.push({
+      events: [
+        { event: 'meta', payload: { requestedModel: 'gpt-4o', usedModel: 'gpt-4o-mini', fallbackReason: '' } },
+        { event: 'chunk', payload: { delta: 'Hello from tools' } },
+        { event: 'done', payload: { text: 'Hello from tools', requestedModel: 'gpt-4o', model: 'gpt-4o-mini', fallbackReason: '' } },
+      ],
+    });
 
     const { initOpenAI, streamChat } = await import('../openai');
     initOpenAI({
@@ -318,6 +379,13 @@ describe('openai service', () => {
       ]),
     }));
     expect(buildRepoContextForPrompt).toHaveBeenCalledWith('Inspect the repo', { reason: 'assistant-tool' });
+    expect(manualStreamRequests).toHaveLength(1);
+    expect(manualStreamRequests[0]).toEqual(expect.objectContaining({
+      stream: true,
+      model: 'gpt-4o',
+      temperature: 0.7,
+      maxTokens: 4096,
+    }));
   });
 
   it('falls back to repo context when tool orchestration fails', async () => {
@@ -327,12 +395,13 @@ describe('openai service', () => {
     buildRepoContextForPrompt.mockResolvedValueOnce({
       contextText: 'Repository sync result: pulled',
     });
-    manualCreate.mockResolvedValueOnce((async function* stream() {
-      yield {
-        model: 'gpt-4o',
-        choices: [{ delta: { content: 'Fallback response' } }],
-      };
-    }()));
+    manualStreamResponses.push({
+      events: [
+        { event: 'meta', payload: { requestedModel: 'gpt-4o', usedModel: 'gpt-4o', fallbackReason: '' } },
+        { event: 'chunk', payload: { delta: 'Fallback response' } },
+        { event: 'done', payload: { text: 'Fallback response', requestedModel: 'gpt-4o', model: 'gpt-4o', fallbackReason: '' } },
+      ],
+    });
 
     const onMeta = vi.fn();
     const { initOpenAI, streamChat } = await import('../openai');
@@ -355,11 +424,14 @@ describe('openai service', () => {
     buildRepoContextForPrompt.mockResolvedValueOnce({
       contextText: 'Repository notes context\n- Projects/Scribe.md',
     });
-    manualCreate.mockResolvedValueOnce((async function* stream() {
-      yield {
-        choices: [{ delta: { content: '{"path":"Projects/scribe.md"}' } }],
-      };
-    }()));
+    manualJsonResponses.push({
+      payload: {
+        text: '{"path":"Projects/scribe.md"}',
+        requestedModel: 'gpt-4o',
+        model: 'gpt-4o',
+        fallbackReason: '',
+      },
+    });
     runAgentTool.mockResolvedValueOnce({
       ok: true,
       toolName: 'save_note_to_repository',
@@ -400,22 +472,26 @@ describe('openai service', () => {
       content: '# Scribe\n\nCurrent notes.',
     });
     expect(resolveManualToolMessages).not.toHaveBeenCalled();
-    expect(manualCreate).toHaveBeenCalledWith(expect.objectContaining({
-      stream: true,
+    expect(manualJsonRequests).toHaveLength(1);
+    expect(manualJsonRequests[0]).toEqual(expect.objectContaining({
+      stream: false,
       temperature: 0.1,
-      max_tokens: 200,
-    }), { signal: null });
+      maxTokens: 200,
+    }));
   });
 
   it('falls back to a canonical markdown filename when the save hint is invalid', async () => {
     buildRepoContextForPrompt.mockResolvedValueOnce({
       contextText: 'Repository entries under /:\n- dir: Projects',
     });
-    manualCreate.mockResolvedValueOnce((async function* stream() {
-      yield {
-        choices: [{ delta: { content: '{"path":"Projects/not-used.txt"}' } }],
-      };
-    }()));
+    manualJsonResponses.push({
+      payload: {
+        text: '{"path":"Projects/not-used.txt"}',
+        requestedModel: 'gpt-4o',
+        model: 'gpt-4o',
+        fallbackReason: '',
+      },
+    });
     runAgentTool.mockResolvedValueOnce({
       ok: true,
       toolName: 'save_note_to_repository',

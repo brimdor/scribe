@@ -1,6 +1,6 @@
-import OpenAI from 'openai';
 import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
 import { getAgentToolPromptCatalog, getAgentToolSystemPrompt, resolveManualToolMessages, runAgentTool } from './agent-tools';
+import { ApiError, apiRequest } from './api';
 import { logAgentEvent } from './debug';
 import { buildRepoContextForPrompt, getLatestUserPrompt, shouldRequireToolUsage, shouldUseRepoKnowledgeBase } from './github';
 import { isMarkdownPath, parseSaveNotePromptAction, resolveNoteSavePath } from '../utils/note-publish';
@@ -79,29 +79,145 @@ function extractPathFromSelectionResponse(text = '') {
   return '';
 }
 
-async function collectManualResponseText({ messages, temperature = 0.2, maxTokens = 200, signal = null } = {}) {
-  if (!client) {
+async function collectManualResponseText({ messages, temperature = 0.2, maxTokens = 200 } = {}) {
+  if (!clientConfig?.baseURL) {
     return '';
   }
 
-  const stream = await client.chat.completions.create({
-    model: clientConfig?.model || OPENAI_MODEL,
-    messages,
-    stream: true,
-    temperature,
-    max_tokens: maxTokens,
-    store: false,
-  }, { signal });
+  const response = await apiRequest('/api/ai/manual/chat', {
+    method: 'POST',
+    body: {
+      messages,
+      model: clientConfig?.model || OPENAI_MODEL,
+      stream: false,
+      temperature,
+      maxTokens,
+    },
+  });
 
-  let fullText = '';
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content || '';
-    if (delta) {
-      fullText += delta;
+  return response.text || '';
+}
+
+async function parseErrorResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const payload = await response.json();
+      throw new ApiError(payload?.error || `Request failed with status ${response.status}`, {
+        status: response.status,
+        code: payload?.code || null,
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
     }
   }
 
-  return fullText;
+  const message = await response.text();
+  throw new ApiError(message || `Request failed with status ${response.status}`, {
+    status: response.status,
+  });
+}
+
+function readSseEventBlock(block = '') {
+  const lines = block.split('\n');
+  let event = 'message';
+  const dataLines = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      continue;
+    }
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim() || 'message';
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+
+  if (!dataLines.length) {
+    return null;
+  }
+
+  return {
+    event,
+    payload: JSON.parse(dataLines.join('\n')),
+  };
+}
+
+async function streamManualChatResponse({ messages, model, temperature = 0.7, maxTokens = 4096, signal = null, onChunk, onMeta } = {}) {
+  const response = await fetch('/api/ai/manual/chat', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages,
+      model,
+      stream: true,
+      temperature,
+      maxTokens,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    await parseErrorResponse(response);
+  }
+
+  if (!response.body) {
+    throw new Error('Manual provider response body is unavailable.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+  let finalPayload = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let boundaryIndex = buffer.indexOf('\n\n');
+    while (boundaryIndex >= 0) {
+      const block = buffer.slice(0, boundaryIndex).trim();
+      buffer = buffer.slice(boundaryIndex + 2);
+      if (block) {
+        const message = readSseEventBlock(block);
+        if (message?.event === 'meta') {
+          onMeta?.({
+            provider: 'manual',
+            requestedModel: message.payload?.requestedModel || model || OPENAI_MODEL,
+            usedModel: message.payload?.usedModel || model || OPENAI_MODEL,
+            fallbackReason: message.payload?.fallbackReason || '',
+          });
+        } else if (message?.event === 'chunk') {
+          const delta = message.payload?.delta || '';
+          if (delta) {
+            fullText += delta;
+            onChunk?.(delta, fullText);
+          }
+        } else if (message?.event === 'done') {
+          finalPayload = message.payload;
+        } else if (message?.event === 'error') {
+          throw new Error(message.payload?.error || 'Manual provider request failed.');
+        }
+      }
+      boundaryIndex = buffer.indexOf('\n\n');
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  return finalPayload?.text || fullText;
 }
 
 function formatOAuthToolTranscript(messages, toolEvents = []) {
@@ -281,11 +397,7 @@ export function initOpenAI(config) {
     return null;
   }
 
-  client = new OpenAI({
-    apiKey: clientConfig.apiKey,
-    baseURL: clientConfig.baseURL,
-    dangerouslyAllowBrowser: true,
-  });
+  client = { provider: 'manual-proxy' };
 
   return client;
 }
@@ -517,7 +629,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     });
   }
 
-  if (!client) {
+  if (!clientConfig?.baseURL) {
     throw new Error('OpenAI client not initialized. Please configure your agent settings.');
   }
 
@@ -625,36 +737,23 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     fallbackReason: toolFallbackReason,
   });
 
-  const stream = await client.chat.completions.create({
-    model: clientConfig?.model || OPENAI_MODEL,
+  return streamManualChatResponse({
     messages: resolvedMessages,
-    stream: true,
+    model: clientConfig?.model || OPENAI_MODEL,
     temperature: 0.7,
-    max_tokens: 4096,
-    store: false,
-  }, { signal });
-
-  let fullText = '';
-  for await (const chunk of stream) {
-    const chunkModel = typeof chunk?.model === 'string' ? chunk.model.trim() : '';
-    if (chunkModel && chunkModel !== usedModel) {
-      usedModel = chunkModel;
+    maxTokens: 4096,
+    signal,
+    onChunk,
+    onMeta: (nextMeta) => {
+      usedModel = nextMeta?.usedModel || usedModel;
       onMeta?.({
         provider: 'manual',
         requestedModel,
         usedModel,
         fallbackReason: toolFallbackReason,
       });
-    }
-
-    const delta = chunk.choices[0]?.delta?.content || '';
-    if (delta) {
-      fullText += delta;
-      onChunk?.(delta, fullText);
-    }
-  }
-
-  return fullText;
+    },
+  });
 }
 
 export async function quickChat(prompt) {
@@ -671,22 +770,25 @@ export async function quickChat(prompt) {
     });
   }
 
-  if (!client) {
+  if (!clientConfig?.baseURL) {
     return null;
   }
 
-  const response = await client.chat.completions.create({
-    model: clientConfig?.model || OPENAI_MODEL,
-    messages: [
-      { role: 'system', content: 'You are a helpful assistant. Respond concisely.' },
-      { role: 'user', content: prompt },
-    ],
-    temperature: 0.5,
-    max_tokens: 100,
-    store: false,
+  const response = await apiRequest('/api/ai/manual/chat', {
+    method: 'POST',
+    body: {
+      model: clientConfig?.model || OPENAI_MODEL,
+      messages: [
+        { role: 'system', content: 'You are a helpful assistant. Respond concisely.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.5,
+      maxTokens: 100,
+      stream: false,
+    },
   });
 
-  return response.choices[0]?.message?.content?.trim() || '';
+  return response.text || '';
 }
 
 export async function generateTitle(userMessage) {

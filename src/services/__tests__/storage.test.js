@@ -38,6 +38,50 @@ function createFetchMock() {
     const path = parsed.pathname;
     const body = options.body ? JSON.parse(options.body) : {};
 
+    if (path === '/api/storage/app-settings') {
+      if (method === 'GET') {
+        return jsonResponse(200, {
+          settings: {
+            environmentName: settingsStore.get('environmentName') || '',
+            githubOwner: settingsStore.get('githubOwner') || '',
+            githubRepo: settingsStore.get('githubRepo') || '',
+            openaiConnectionMethod: settingsStore.get('openaiConnectionMethod') || 'manual',
+            agentBaseUrl: settingsStore.get('agentBaseUrl') || '',
+            agentApiKey: '',
+            agentApiKeyConfigured: Boolean(settingsStore.get('agentApiKey')),
+            agentModel: settingsStore.get('agentModel') || '',
+          },
+        });
+      }
+
+      if (method === 'PUT') {
+        settingsStore.set('environmentName', body.environmentName || '');
+        settingsStore.set('githubOwner', body.githubOwner || '');
+        settingsStore.set('githubRepo', body.githubRepo || '');
+        settingsStore.set('openaiConnectionMethod', body.openaiConnectionMethod || 'manual');
+        settingsStore.set('agentBaseUrl', body.agentBaseUrl || '');
+        settingsStore.set('agentModel', body.agentModel || '');
+        if (body.clearAgentApiKey) {
+          settingsStore.set('agentApiKey', '');
+        } else if (typeof body.agentApiKey === 'string' && body.agentApiKey.trim()) {
+          settingsStore.set('agentApiKey', body.agentApiKey.trim());
+        }
+
+        return jsonResponse(200, {
+          settings: {
+            environmentName: settingsStore.get('environmentName') || '',
+            githubOwner: settingsStore.get('githubOwner') || '',
+            githubRepo: settingsStore.get('githubRepo') || '',
+            openaiConnectionMethod: settingsStore.get('openaiConnectionMethod') || 'manual',
+            agentBaseUrl: settingsStore.get('agentBaseUrl') || '',
+            agentApiKey: '',
+            agentApiKeyConfigured: Boolean(settingsStore.get('agentApiKey')),
+            agentModel: settingsStore.get('agentModel') || '',
+          },
+        });
+      }
+    }
+
     if (path.startsWith('/api/storage/settings/')) {
       const key = decodeURIComponent(path.replace('/api/storage/settings/', ''));
       if (method === 'GET') {
@@ -103,8 +147,26 @@ describe('storage service', () => {
       openaiConnectionMethod: 'oauth',
       agentBaseUrl: 'http://localhost:11434/v1',
       agentApiKey: '',
+      agentApiKeyConfigured: false,
       agentModel: 'llama3',
     });
+  });
+
+  it('does not return a saved manual api key to the browser', async () => {
+    const { getAppSettings, saveAppSettings } = await import('../storage');
+
+    await saveAppSettings({
+      agentBaseUrl: 'http://localhost:11434/v1',
+      agentApiKey: 'secret-key',
+      agentModel: 'gpt-4o-mini',
+    });
+
+    await expect(getAppSettings()).resolves.toEqual(expect.objectContaining({
+      agentApiKey: '',
+      agentApiKeyConfigured: true,
+      agentBaseUrl: 'http://localhost:11434/v1',
+      agentModel: 'gpt-4o-mini',
+    }));
   });
 
   it('persists normalized oauth session and pending flow values', async () => {

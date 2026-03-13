@@ -28,6 +28,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
+  const [clearAgentApiKey, setClearAgentApiKey] = useState(false);
   
   const [orgs, setOrgs] = useState([]);
   const [repos, setRepos] = useState([]);
@@ -38,6 +39,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
   useEffect(() => {
     setForm(settings);
+    setClearAgentApiKey(false);
   }, [settings, isOpen]);
 
   useEffect(() => {
@@ -174,6 +176,9 @@ export default function SettingsPanel({ isOpen, onClose }) {
       if (name === 'openaiConnectionMethod' && value !== current.openaiConnectionMethod) {
         updates.agentModel = '';
       }
+      if (name === 'agentApiKey') {
+        setClearAgentApiKey(false);
+      }
       return { ...current, ...updates };
     });
     setError('');
@@ -252,7 +257,10 @@ export default function SettingsPanel({ isOpen, onClose }) {
     try {
       const previousOwner = (settings.githubOwner || '').trim();
       const previousRepo = (settings.githubRepo || '').trim();
-      const saved = await saveSettings(form);
+      const saved = await saveSettings({
+        ...form,
+        clearAgentApiKey,
+      });
       const nextOwner = (saved.githubOwner || '').trim();
       const nextRepo = (saved.githubRepo || '').trim();
       const repoChanged = previousOwner !== nextOwner || previousRepo !== nextRepo;
@@ -280,9 +288,12 @@ export default function SettingsPanel({ isOpen, onClose }) {
     } catch {
       setError('Unable to save settings right now.');
     } finally {
+      setClearAgentApiKey(false);
       setSaving(false);
     }
   };
+
+  const manualKeyConfigured = Boolean(settings.agentApiKeyConfigured) && !clearAgentApiKey;
 
   return (
     <>
@@ -486,13 +497,29 @@ export default function SettingsPanel({ isOpen, onClose }) {
                     type="password"
                     value={form.agentApiKey}
                     onChange={handleChange}
-                    placeholder="Optional"
+                    placeholder={manualKeyConfigured ? 'Saved on server - enter a new key to replace it' : 'Optional'}
                     autoComplete="off"
                   />
                 </label>
 
+                {settings.agentApiKeyConfigured && (
+                  <div className="settings-sync-meta">
+                    <span className={`settings-oauth-badge settings-sync-badge ${clearAgentApiKey ? 'error' : 'success'}`}>
+                      {clearAgentApiKey ? 'Key will be removed' : 'Key saved on server'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-ghost settings-sync-button"
+                      onClick={() => setClearAgentApiKey((current) => !current)}
+                      disabled={saving || loading}
+                    >
+                      {clearAgentApiKey ? 'Keep saved key' : 'Remove saved key'}
+                    </button>
+                  </div>
+                )}
+
                 <p className="settings-helper-text">
-                  Keep manual mode for local or third-party OpenAI-compatible providers. If that provider does not require an API key, Scribe will continue to use <code>1234</code> as the fallback value.
+                  Keep manual mode for local or third-party OpenAI-compatible providers. Scribe stores manual API keys server-side only. If your provider does not require a key, Scribe will continue to use <code>1234</code> as the fallback value.
                 </p>
               </>
             )}

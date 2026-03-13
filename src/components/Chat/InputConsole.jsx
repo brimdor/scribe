@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { createThread, addMessage, getMessagesByThread, getThread, updateThread } from '../../services/storage';
-import { streamChat, generateTitle, getFallbackTitle, initOpenAI, getOpenAIClient, getOpenAIConfig } from '../../services/openai';
+import { streamChat, generateTitle, getFallbackTitle, initOpenAI, getOpenAIConfig } from '../../services/openai';
 import { getSchemaTemplate } from '../../schemas';
 import { useSettings } from '../../context/SettingsContext';
 import './InputConsole.css';
@@ -112,7 +112,11 @@ export default function InputConsole({ threadId, activeSchema, onThreadCreated }
       const schemaTemplate = activeSchema ? getSchemaTemplate(activeSchema) : null;
 
       // Check if OpenAI is available
-      if (!getOpenAIClient()) {
+      const hasAiConnection = currentConfig?.provider === 'oauth'
+        ? Boolean(currentConfig?.openaiOAuthSession)
+        : Boolean(currentConfig?.baseURL);
+
+      if (!hasAiConnection) {
         const message = currentConfig?.provider === 'oauth'
           ? '⚠️ **OpenAI sign-in is not active.** Reconnect OpenAI in Settings or switch back to the manual provider mode.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas'
           : '⚠️ **Agent settings incomplete.** Add an OpenAI-compatible base URL in Settings to enable AI-powered note generation.\n\nIf your provider does not require an API key, you can leave that field blank and Scribe will use the fallback value `1234`.\n\nFor now, you can still:\n- Browse your GitHub notes\n- Manage conversation threads\n- Select note schemas';

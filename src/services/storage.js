@@ -7,6 +7,7 @@ export const DEFAULT_APP_SETTINGS = {
   openaiConnectionMethod: 'manual',
   agentBaseUrl: '',
   agentApiKey: '',
+  agentApiKeyConfigured: false,
   agentModel: '',
 };
 
@@ -136,6 +137,8 @@ export function normalizeAppSettings(settings = {}) {
     agentBaseUrl: typeof settings.agentBaseUrl === 'string'
       ? settings.agentBaseUrl.trim().replace(/\/+$/, '')
       : '',
+    agentApiKey: typeof settings.agentApiKey === 'string' ? settings.agentApiKey.trim() : '',
+    agentApiKeyConfigured: Boolean(settings.agentApiKeyConfigured),
   };
 }
 
@@ -209,17 +212,20 @@ export function normalizeOpenAIOAuthPendingFlow(flow = null) {
 }
 
 export async function getAppSettings() {
-  const keys = Object.keys(DEFAULT_APP_SETTINGS);
-  const entries = await Promise.all(keys.map(async (key) => [key, await getSetting(key)]));
-  return normalizeAppSettings(Object.fromEntries(entries));
+  const response = await apiRequest('/api/storage/app-settings');
+  return normalizeAppSettings(response.settings);
 }
 
 export async function saveAppSettings(settings) {
   const normalized = normalizeAppSettings(settings);
-  await Promise.all(
-    Object.entries(normalized).map(([key, value]) => setSetting(key, value)),
-  );
-  return normalized;
+  const response = await apiRequest('/api/storage/app-settings', {
+    method: 'PUT',
+    body: {
+      ...normalized,
+      clearAgentApiKey: Boolean(settings.clearAgentApiKey),
+    },
+  });
+  return normalizeAppSettings(response.settings);
 }
 
 export async function getOpenAIOAuthSession() {

@@ -17,10 +17,76 @@ import {
 } from '../services/storage-store.js';
 
 const router = Router();
+const APP_SETTINGS_KEYS = [
+  'environmentName',
+  'githubOwner',
+  'githubRepo',
+  'openaiConnectionMethod',
+  'agentBaseUrl',
+  'agentModel',
+];
+
+function normalizeSettingString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildAppSettings(userId) {
+  const settings = Object.fromEntries(
+    APP_SETTINGS_KEYS.map((key) => [key, normalizeSettingString(getSetting(userId, key))]),
+  );
+
+  return {
+    ...settings,
+    openaiConnectionMethod: settings.openaiConnectionMethod === 'oauth' ? 'oauth' : 'manual',
+    agentBaseUrl: settings.agentBaseUrl.replace(/\/+$/, ''),
+    agentApiKey: '',
+    agentApiKeyConfigured: Boolean(normalizeSettingString(getSetting(userId, 'agentApiKey'))),
+  };
+}
 
 router.use(requireAuth);
 
+router.get('/app-settings', (req, res) => {
+  res.status(200).json({ settings: buildAppSettings(req.auth.userId) });
+});
+
+router.put('/app-settings', (req, res) => {
+  const userId = req.auth.userId;
+  const payload = req.body || {};
+
+  for (const key of APP_SETTINGS_KEYS) {
+    const nextValue = normalizeSettingString(payload[key]);
+    if (key === 'openaiConnectionMethod') {
+      setSetting(userId, key, nextValue === 'oauth' ? 'oauth' : 'manual');
+      continue;
+    }
+
+    if (key === 'agentBaseUrl') {
+      setSetting(userId, key, nextValue.replace(/\/+$/, ''));
+      continue;
+    }
+
+    setSetting(userId, key, nextValue);
+  }
+
+  if (payload.clearAgentApiKey) {
+    setSetting(userId, 'agentApiKey', '');
+  } else {
+    const nextApiKey = normalizeSettingString(payload.agentApiKey);
+    if (nextApiKey) {
+      setSetting(userId, 'agentApiKey', nextApiKey);
+    }
+  }
+
+  res.status(200).json({ settings: buildAppSettings(userId) });
+});
+
 router.get('/settings/:key', (req, res) => {
+  if (req.params.key === 'agentApiKey') {
+    res.status(403).json({ error: 'Manual provider secrets are write-only.' });
+    return;
+  }
+
   const value = getSetting(req.auth.userId, req.params.key);
   res.status(200).json({ value });
 });
