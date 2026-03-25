@@ -28,4 +28,4 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run exhaustive test suite
-        run: npm run test:full
+        run: npx vitest run --coverage && npx playwright test
