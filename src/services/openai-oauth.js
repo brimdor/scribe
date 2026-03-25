@@ -1,4 +1,5 @@
 import { NOTE_SYSTEM_PROMPT } from '../utils/constants';
+import { buildAgentContext, formatAgentContextForPrompt } from './agent-context';
 
 export const OPENAI_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 export const OPENAI_OAUTH_AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize';
@@ -148,9 +149,9 @@ function normalizeRequestedModel(model) {
   return UNSUPPORTED_CODEX_MODELS.has(normalizedModel.toLowerCase()) ? '' : normalizedModel;
 }
 
-function buildCodexRequestBody({ model, messages, schemaContext, stream }) {
+function buildCodexRequestBody({ model, messages, schemaContext, stream, agentContextPrompt = '' }) {
   const payload = {
-    instructions: buildInstructions(schemaContext),
+    instructions: buildInstructions(schemaContext, agentContextPrompt),
     input: toResponsesInput(messages),
     stream,
     store: false,
@@ -164,7 +165,7 @@ function buildCodexRequestBody({ model, messages, schemaContext, stream }) {
   return payload;
 }
 
-async function requestCodexResponse({ session, model, messages, schemaContext, signal, stream }) {
+async function requestCodexResponse({ session, model, messages, schemaContext, signal, stream, agentContextPrompt = '' }) {
   const headers = {
     'Content-Type': 'application/json',
     Accept: stream ? 'text/event-stream' : 'application/json',
@@ -180,7 +181,7 @@ async function requestCodexResponse({ session, model, messages, schemaContext, s
     method: 'POST',
     headers,
     signal,
-    body: JSON.stringify(buildCodexRequestBody({ model, messages, schemaContext, stream })),
+    body: JSON.stringify(buildCodexRequestBody({ model, messages, schemaContext, stream, agentContextPrompt })),
   });
 
   if (!response.ok) {
@@ -210,10 +211,18 @@ function normalizeSession(payload, currentStatus = 'connected') {
   };
 }
 
-function buildInstructions(schemaContext = null) {
-  return schemaContext
-    ? `${NOTE_SYSTEM_PROMPT}\n\nThe user selected this note schema. Follow it exactly when producing the answer:\n\n${schemaContext}`
-    : NOTE_SYSTEM_PROMPT;
+function buildInstructions(schemaContext = null, agentContextPrompt = '') {
+  const parts = [NOTE_SYSTEM_PROMPT];
+
+  if (agentContextPrompt) {
+    parts.push(agentContextPrompt);
+  }
+
+  if (schemaContext) {
+    parts.push(`The user selected this note schema. Follow it exactly when producing the answer:\n\n${schemaContext}`);
+  }
+
+  return parts.join('\n\n');
 }
 
 function toResponsesInput(messages) {
@@ -409,6 +418,14 @@ export async function fetchOpenAIModels({ session, signal } = {}) {
 async function createCodexResponse({ session, model, messages, schemaContext, signal, stream = true, onChunk }) {
   const initialModel = normalizeRequestedModel(model);
 
+  let agentContextPrompt = '';
+  try {
+    const agentContext = await buildAgentContext();
+    agentContextPrompt = formatAgentContextForPrompt(agentContext);
+  } catch {
+    // Agent context is non-critical; continue without it
+  }
+
   const firstAttempt = await requestCodexResponse({
     session,
     model: initialModel,
@@ -416,6 +433,7 @@ async function createCodexResponse({ session, model, messages, schemaContext, si
     schemaContext,
     signal,
     stream,
+    agentContextPrompt,
   });
 
   let response = null;
@@ -441,6 +459,7 @@ async function createCodexResponse({ session, model, messages, schemaContext, si
         schemaContext,
         signal,
         stream,
+        agentContextPrompt,
       });
 
       if (retryAttempt.ok) {

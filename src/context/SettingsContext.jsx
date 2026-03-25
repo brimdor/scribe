@@ -10,6 +10,13 @@ import {
   isOpenAIOAuthCallback,
   pollOpenAIDeviceFlow,
 } from '../services/openai-oauth';
+import {
+  executeHeartbeat,
+  getHeartbeatState,
+  setHeartbeatStateListener,
+  startHeartbeatScheduler,
+  stopHeartbeatScheduler,
+} from '../services/heartbeat';
 import { useAuth } from './AuthContext';
 
 const SettingsContext = createContext(null);
@@ -19,6 +26,7 @@ export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState(DEFAULT_APP_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHeartbeatPanelOpen, setIsHeartbeatPanelOpen] = useState(false);
   const [openAIOAuthSession, setOpenAIOAuthSession] = useState(null);
   const [openAIOAuthPendingFlow, setOpenAIOAuthPendingFlow] = useState(null);
   const [openAIOAuthMessage, setOpenAIOAuthMessage] = useState('');
@@ -26,6 +34,7 @@ export function SettingsProvider({ children }) {
   const [oauthBusy, setOAuthBusy] = useState(false);
   const [agentModels, setAgentModels] = useState([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [heartbeatStatus, setHeartbeatStatus] = useState(getHeartbeatState());
   const settingsRef = useRef(DEFAULT_APP_SETTINGS);
   const devicePollingRef = useRef(false);
 
@@ -71,6 +80,32 @@ export function SettingsProvider({ children }) {
     window.addEventListener('scribe:openai-oauth-session', handleSessionUpdate);
     return () => window.removeEventListener('scribe:openai-oauth-session', handleSessionUpdate);
   }, []);
+
+  // Heartbeat state listener
+  useEffect(() => {
+    setHeartbeatStateListener((nextState) => {
+      setHeartbeatStatus(nextState);
+    });
+
+    return () => setHeartbeatStateListener(null);
+  }, []);
+
+  // Heartbeat scheduler lifecycle
+  useEffect(() => {
+    if (!isAuthenticated || loading) {
+      return undefined;
+    }
+
+    if (settings.heartbeatEnabled) {
+      startHeartbeatScheduler(settings.heartbeatIntervalMinutes);
+    } else {
+      stopHeartbeatScheduler();
+    }
+
+    return () => {
+      stopHeartbeatScheduler();
+    };
+  }, [isAuthenticated, loading, settings.heartbeatEnabled, settings.heartbeatIntervalMinutes]);
 
   const persistSettings = useCallback(async (nextSettings) => {
     const payload = await saveBootstrapData({ settings: nextSettings });
@@ -204,6 +239,9 @@ export function SettingsProvider({ children }) {
 
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+  const openHeartbeatPanel = useCallback(() => setIsHeartbeatPanelOpen(true), []);
+  const closeHeartbeatPanel = useCallback(() => setIsHeartbeatPanelOpen(false), []);
+  const triggerHeartbeat = useCallback(() => executeHeartbeat(), []);
 
   const connectOpenAI = useCallback(async () => {
     setOAuthBusy(true);
@@ -329,6 +367,11 @@ export function SettingsProvider({ children }) {
     openSettings,
     closeSettings,
     saveSettings: persistSettings,
+    isHeartbeatPanelOpen,
+    openHeartbeatPanel,
+    closeHeartbeatPanel,
+    heartbeatStatus,
+    triggerHeartbeat,
     openAIOAuthSession,
     openAIOAuthPendingFlow,
     openAIOAuthMessage,
@@ -348,6 +391,11 @@ export function SettingsProvider({ children }) {
     openSettings,
     closeSettings,
     persistSettings,
+    isHeartbeatPanelOpen,
+    openHeartbeatPanel,
+    closeHeartbeatPanel,
+    heartbeatStatus,
+    triggerHeartbeat,
     openAIOAuthSession,
     openAIOAuthPendingFlow,
     openAIOAuthMessage,

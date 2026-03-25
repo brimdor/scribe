@@ -18,6 +18,7 @@ import {
   syncAssignedRepo,
   writeLocalRepoFile,
 } from './github';
+import { fetchWorkspaceState } from './agent-context';
 import { logAgentEvent } from './debug';
 
 const TOOL_ROUND_LIMIT = 6;
@@ -417,6 +418,18 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
     execute: async ({ owner, repo } = {}) => listRepoPullRequests({ owner, repo }),
+  },
+  {
+    name: 'get_workspace_summary',
+    category: 'Platform',
+    exposure: 'manual-provider',
+    description: 'Get a comprehensive summary of the current workspace state including note count, repository status, tag distribution, directory breakdown, and recent activity.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+    execute: async () => fetchWorkspaceState(),
   },
 ];
 

@@ -27,6 +27,8 @@ export default function SettingsPanel({ isOpen, onClose }) {
     connectOpenAI,
     disconnectOpenAI,
     clearOpenAIMessage,
+    heartbeatStatus,
+    openHeartbeatPanel,
   } = useSettings();
   const { theme, isManual, setTheme } = useTheme();
   const [form, setForm] = useState(settings);
@@ -190,6 +192,19 @@ export default function SettingsPanel({ isOpen, onClose }) {
     setStatus('');
     setRepoSyncMeta(null);
     clearOpenAIMessage();
+  };
+
+  const handleToggle = (name) => {
+    setForm((current) => ({ ...current, [name]: !current[name] }));
+    setError('');
+    setStatus('');
+  };
+
+  const handleNumericChange = (event) => {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: Number(value) }));
+    setError('');
+    setStatus('');
   };
 
   const handleThemeChange = (event) => {
@@ -357,6 +372,91 @@ export default function SettingsPanel({ isOpen, onClose }) {
               onDisconnect={handleDisconnect}
               onToggleClearAgentApiKey={() => setClearAgentApiKey((current) => !current)}
             />
+
+          <section className="settings-section settings-section-heartbeat">
+            <div className="settings-section-heading">
+              <span>Agent behavior</span>
+              <small>Heartbeat scheduling and agent preferences</small>
+            </div>
+
+            <div className="settings-card settings-heartbeat-card">
+              <div className="settings-card-row settings-toggle-row">
+                <div>
+                  <span>Heartbeat</span>
+                  <small>Periodic autonomous health check</small>
+                </div>
+                <button
+                  type="button"
+                  className={`settings-toggle ${form.heartbeatEnabled ? 'active' : ''}`}
+                  onClick={() => handleToggle('heartbeatEnabled')}
+                  role="switch"
+                  aria-checked={form.heartbeatEnabled}
+                  aria-label="Toggle heartbeat"
+                >
+                  <span className="settings-toggle-knob" />
+                </button>
+              </div>
+
+              {form.heartbeatEnabled && (
+                <label className="settings-field">
+                  <span>Interval (minutes)</span>
+                  <select
+                    name="heartbeatIntervalMinutes"
+                    value={form.heartbeatIntervalMinutes}
+                    onChange={handleNumericChange}
+                  >
+                    <option value={15}>15 minutes</option>
+                    <option value={30}>30 minutes</option>
+                    <option value={60}>1 hour</option>
+                    <option value={120}>2 hours</option>
+                    <option value={240}>4 hours</option>
+                    <option value={480}>8 hours</option>
+                    <option value={1440}>24 hours</option>
+                  </select>
+                </label>
+              )}
+
+              {heartbeatStatus.lastExecution && (
+                <div className="settings-card-row">
+                  <span>Last heartbeat</span>
+                  <strong>
+                    {heartbeatStatus.lastExecution.status === 'passed' ? 'Passed' : 'Failed'}
+                    {' \u2014 '}
+                    {heartbeatStatus.lastExecution.rating}/5
+                  </strong>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="btn-ghost settings-heartbeat-history-link"
+                onClick={() => { openHeartbeatPanel(); onClose(); }}
+              >
+                View heartbeat history
+              </button>
+            </div>
+
+            <label className="settings-field">
+              <span>Agent verbosity</span>
+              <select name="agentVerbosity" value={form.agentVerbosity} onChange={handleChange}>
+                <option value="detailed">Detailed</option>
+                <option value="concise">Concise</option>
+              </select>
+            </label>
+
+            <label className="settings-field">
+              <span>Auto-publish</span>
+              <select name="agentAutoPublish" value={form.agentAutoPublish} onChange={handleChange}>
+                <option value="ask">Ask before publishing</option>
+                <option value="auto">Publish automatically</option>
+                <option value="never">Never auto-publish</option>
+              </select>
+            </label>
+
+            <p className="settings-helper-text">
+              Verbosity controls how much detail the agent includes in responses. Auto-publish determines whether the agent commits changes to your repository without asking first.
+            </p>
+          </section>
 
           {(error || status || loading || openAIOAuthMessage) && (
             <div className={`settings-status ${error ? 'error' : connectionTone}`}>

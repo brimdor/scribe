@@ -11,9 +11,8 @@
     "preview": "vite preview",
     "lint": "eslint src/",
     "test": "vitest run",
-    "test:full": "npm test && npm run test:e2e",
-    "test:server-repo": "vitest run server/src/services/__tests__/github-repo-files.test.js server/src/routes/__tests__/github-routes.test.js",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:report": "node scripts/test-report.js"
   },
   "dependencies": {
     "@octokit/rest": "^21.0.0",

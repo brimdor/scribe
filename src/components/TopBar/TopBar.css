@@ -180,3 +180,33 @@
 .user-menu-logout {
   color: var(--accent-error);
 }
+
+/* Heartbeat indicator */
+.topbar-heartbeat {
+  position: relative;
+}
+
+.topbar-heartbeat-dot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast);
+}
+
+.topbar-heartbeat-dot.idle {
+  background: var(--text-tertiary);
+}
+
+.topbar-heartbeat-dot.passed {
+  background: var(--accent-success);
+}
+
+.topbar-heartbeat-dot.failed {
+  background: var(--accent-error);
+}
+
+.topbar-heartbeat-dot.running {
+  background: var(--accent-primary);
+  animation: pulse 1.5s ease-in-out infinite;
+}

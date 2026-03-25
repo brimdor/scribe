@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../agent-context', () => ({
+  buildAgentContext: vi.fn().mockResolvedValue({
+    purpose: 'test',
+    workspace: null,
+    tools: [],
+    preferences: {},
+  }),
+  formatAgentContextForPrompt: vi.fn().mockReturnValue(''),
+}));
+
 function createEventStreamResponse(payloads) {
   const encoder = new TextEncoder();
   const body = new ReadableStream({

@@ -1,4 +1,5 @@
 import { NOTE_SYSTEM_PROMPT, OPENAI_MODEL } from '../utils/constants';
+import { buildAgentContext, formatAgentContextForPrompt } from './agent-context';
 import { getAgentToolPromptCatalog, getAgentToolSystemPrompt, resolveManualToolMessages, runAgentTool } from './agent-tools';
 import { ApiError, apiRequest } from './api';
 import { logAgentEvent } from './debug';
@@ -290,7 +291,7 @@ function parseOAuthToolPlannerResponse(text = '') {
   throw new Error('OAuth tool planner returned an unsupported response shape.');
 }
 
-async function resolveOAuthToolResponse({ session, model, messages, signal = null, requireToolUse = false, onMeta = null } = {}) {
+async function resolveOAuthToolResponse({ session, model, messages, signal = null, requireToolUse = false, onMeta = null, agentContextPrompt = '' } = {}) {
   const toolCatalog = JSON.stringify(getAgentToolPromptCatalog(), null, 2);
   const toolEvents = [];
   let usedAnyTools = false;
@@ -317,6 +318,7 @@ async function resolveOAuthToolResponse({ session, model, messages, signal = nul
       'Use `delete_note_from_repository` for markdown note deletions that should be published immediately.',
       'If the user asks to edit or create a repository file without an immediate publish, use `write_repository_file` and then `publish_repository_changes` only if the user asked to commit/push/publish.',
       `Available tools:\n${toolCatalog}`,
+      agentContextPrompt ? `## Platform Context\n${agentContextPrompt}` : '',
       `Conversation and tool transcript:\n\n${formatOAuthToolTranscript(messages, toolEvents)}`,
     ].join('\n\n');
 
@@ -589,6 +591,13 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     if (shouldLoadRepoKnowledge || requireToolUse) {
       try {
         const session = await getOAuthSession();
+        let agentContextPrompt = '';
+        try {
+          const agentContext = await buildAgentContext();
+          agentContextPrompt = formatAgentContextForPrompt(agentContext);
+        } catch {
+          // Agent context is non-critical; continue without it
+        }
         const toolResponse = await resolveOAuthToolResponse({
           session,
           model: clientConfig.model,
@@ -596,6 +605,7 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
           signal,
           requireToolUse,
           onMeta,
+          agentContextPrompt,
         });
         onChunk?.(toolResponse.text, toolResponse.text);
         return toolResponse.text;
@@ -655,6 +665,16 @@ export async function streamChat(messages, schemaContext = null, onChunk, signal
     { role: 'system', content: NOTE_SYSTEM_PROMPT },
     { role: 'system', content: getAgentToolSystemPrompt() },
   ];
+
+  try {
+    const agentContext = await buildAgentContext();
+    const contextPrompt = formatAgentContextForPrompt(agentContext);
+    if (contextPrompt) {
+      systemMessages.push({ role: 'system', content: contextPrompt });
+    }
+  } catch {
+    // Agent context is non-critical; continue without it
+  }
 
   const repoContext = shouldLoadRepoKnowledge
     ? await buildRepoContextForPrompt(latestPrompt, { reason: 'assistant-tool' })

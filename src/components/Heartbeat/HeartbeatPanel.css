@@ -1,0 +1,207 @@
+.heartbeat-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 15, 0.56);
+  backdrop-filter: blur(6px);
+  z-index: calc(var(--z-modal) - 1);
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+.heartbeat-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(520px, 100vw);
+  height: 100vh;
+  padding: var(--space-xl);
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-secondary) 100%);
+  border-left: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-xl);
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  animation: slideInRight var(--transition-base) ease-out;
+}
+
+.heartbeat-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.heartbeat-panel-eyebrow {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  margin-bottom: var(--space-xs);
+}
+
+.heartbeat-panel-subtitle {
+  color: var(--text-secondary);
+  max-width: 42ch;
+}
+
+.heartbeat-panel-close {
+  flex-shrink: 0;
+}
+
+.heartbeat-panel-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.heartbeat-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-right: var(--space-xs);
+}
+
+.heartbeat-loading,
+.heartbeat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xl) var(--space-md);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.heartbeat-empty-hint {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  max-width: 36ch;
+}
+
+.heartbeat-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.heartbeat-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.heartbeat-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.heartbeat-entry-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.heartbeat-entry-time {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.heartbeat-entry-duration {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.heartbeat-entry-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.heartbeat-entry-badge.success {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--accent-success);
+}
+
+.heartbeat-entry-badge.warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--accent-warning);
+}
+
+.heartbeat-entry-badge.error {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--accent-error);
+}
+
+.heartbeat-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.heartbeat-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.8125rem;
+  min-height: 28px;
+}
+
+.heartbeat-checklist-indicator {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.heartbeat-checklist-indicator.pass {
+  background: var(--accent-success);
+}
+
+.heartbeat-checklist-indicator.fail {
+  background: var(--accent-error);
+}
+
+.heartbeat-checklist-label {
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 120px;
+}
+
+.heartbeat-checklist-detail {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .heartbeat-panel {
+    width: 100vw;
+    padding: var(--space-lg);
+  }
+
+  .heartbeat-panel-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .heartbeat-checklist-item {
+    flex-wrap: wrap;
+  }
+
+  .heartbeat-checklist-label {
+    min-width: auto;
+  }
+}

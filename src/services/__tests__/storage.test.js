@@ -215,6 +215,10 @@ describe('storage service', () => {
       agentApiKey: '',
       agentApiKeyConfigured: false,
       agentModel: 'llama3',
+      heartbeatEnabled: false,
+      heartbeatIntervalMinutes: 60,
+      agentVerbosity: 'detailed',
+      agentAutoPublish: 'ask',
     });
   });
 

@@ -6,9 +6,11 @@ import {
   getSetting,
   getSettings,
   getThread,
+  listHeartbeats,
   listMessagesByThread,
   listSchemas,
   listThreads,
+  saveHeartbeat,
   saveMessage,
   saveSchema,
   saveThread,
@@ -312,6 +314,34 @@ router.put('/schemas/:schemaId', (req, res) => {
 
   const saved = saveSchema(req.auth.userId, schema);
   res.status(201).json({ schema: saved });
+});
+
+router.get('/heartbeats', (req, res) => {
+  const limit = req.query.limit;
+  const offset = req.query.offset;
+  const result = listHeartbeats(req.auth.userId, { limit, offset });
+  res.status(200).json(result);
+});
+
+router.post('/heartbeats', (req, res) => {
+  const body = req.body || {};
+  if (!body.startedAt || !body.completedAt) {
+    res.status(400).json({ error: 'startedAt and completedAt are required.' });
+    return;
+  }
+
+  if (!Array.isArray(body.checklist)) {
+    res.status(400).json({ error: 'checklist array is required.' });
+    return;
+  }
+
+  if (typeof body.rating !== 'number' || body.rating < 0 || body.rating > 5) {
+    res.status(400).json({ error: 'rating must be a number between 0 and 5.' });
+    return;
+  }
+
+  const heartbeat = saveHeartbeat(req.auth.userId, body);
+  res.status(201).json({ heartbeat });
 });
 
 export default router;
