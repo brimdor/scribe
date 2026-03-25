@@ -1,5 +1,5 @@
 import express from 'express';
-import aiRoutes from './routes/ai-routes.js';
+import agentRoutes from './routes/agent-routes.js';
 import authRoutes from './routes/auth-routes.js';
 import debugRoutes from './routes/debug-routes.js';
 import githubRoutes from './routes/github-routes.js';
@@ -18,7 +18,7 @@ export function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
-  app.use('/api/ai', aiRoutes);
+  app.use('/api/agent', agentRoutes);
   app.use('/api/debug', debugRoutes);
   app.use('/api/storage', storageRoutes);
   app.use('/api/github', githubRoutes);

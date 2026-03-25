@@ -9,6 +9,10 @@ export const DEFAULT_APP_SETTINGS = {
   agentApiKey: '',
   agentApiKeyConfigured: false,
   agentModel: '',
+  heartbeatEnabled: false,
+  heartbeatIntervalMinutes: 60,
+  agentVerbosity: 'detailed',
+  agentAutoPublish: 'ask',
 };
 
 const OPENAI_OAUTH_SESSION_KEY = 'openaiOAuthSession';
@@ -153,6 +157,8 @@ export function normalizeAppSettings(settings = {}) {
     Object.entries(settings).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value ?? '']),
   );
 
+  const heartbeatInterval = Number(normalizedEntries.heartbeatIntervalMinutes);
+
   return {
     ...DEFAULT_APP_SETTINGS,
     ...normalizedEntries,
@@ -162,6 +168,14 @@ export function normalizeAppSettings(settings = {}) {
       : '',
     agentApiKey: typeof settings.agentApiKey === 'string' ? settings.agentApiKey.trim() : '',
     agentApiKeyConfigured: Boolean(settings.agentApiKeyConfigured),
+    heartbeatEnabled: normalizedEntries.heartbeatEnabled === true || normalizedEntries.heartbeatEnabled === 'true',
+    heartbeatIntervalMinutes: Number.isFinite(heartbeatInterval) && heartbeatInterval >= 15 && heartbeatInterval <= 1440
+      ? heartbeatInterval
+      : 60,
+    agentVerbosity: normalizedEntries.agentVerbosity === 'concise' ? 'concise' : 'detailed',
+    agentAutoPublish: ['ask', 'auto', 'never'].includes(normalizedEntries.agentAutoPublish)
+      ? normalizedEntries.agentAutoPublish
+      : 'ask',
   };
 }
 
@@ -302,4 +316,21 @@ export async function saveSchema(schema) {
     body: schema,
   });
   return response.schema;
+}
+
+export async function getHeartbeats({ limit = 20, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (offset) params.set('offset', String(offset));
+
+  const response = await apiRequest(`/api/storage/heartbeats?${params.toString()}`);
+  return response;
+}
+
+export async function saveHeartbeatResult(heartbeat) {
+  const response = await apiRequest('/api/storage/heartbeats', {
+    method: 'POST',
+    body: heartbeat,
+  });
+  return response.heartbeat;
 }

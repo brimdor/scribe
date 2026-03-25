@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useSettings } from '../../context/SettingsContext';
 import { useTheme } from '../../context/ThemeContext';
 import { builtInSchemas } from '../../schemas';
 import './TopBar.css';
 
 export default function TopBar({ sidebarOpen, onToggleSidebar, activeSchema, onSchemaSelect, onOpenSettings }) {
   const { user, logout } = useAuth();
+  const { heartbeatStatus, settings, openHeartbeatPanel } = useSettings();
   const { theme, toggleTheme } = useTheme();
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -88,6 +90,21 @@ export default function TopBar({ sidebarOpen, onToggleSidebar, activeSchema, onS
       </div>
 
       <div className="topbar-right">
+        {settings.heartbeatEnabled && (
+          <button
+            className="btn-icon topbar-heartbeat"
+            onClick={openHeartbeatPanel}
+            title={
+              heartbeatStatus.isRunning
+                ? 'Heartbeat running...'
+                : heartbeatStatus.lastExecution
+                  ? `Last heartbeat: ${heartbeatStatus.lastExecution.rating}/5`
+                  : 'Heartbeat active'
+            }
+          >
+            <span className={`topbar-heartbeat-dot ${heartbeatStatus.isRunning ? 'running' : heartbeatStatus.lastExecution?.status === 'passed' ? 'passed' : heartbeatStatus.lastExecution?.status === 'failed' ? 'failed' : 'idle'}`} />
+          </button>
+        )}
         <button className="btn-icon" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>

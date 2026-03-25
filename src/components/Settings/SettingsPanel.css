@@ -69,6 +69,72 @@
   border-color: rgba(14, 165, 140, 0.28);
 }
 
+.settings-section-heartbeat {
+  border-color: rgba(99, 102, 241, 0.28);
+}
+
+.settings-toggle-row {
+  align-items: center;
+}
+
+.settings-toggle-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-toggle-row > div:first-child small {
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.settings-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 48px;
+  height: 28px;
+  min-height: 28px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.settings-toggle.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.settings-toggle-knob {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+
+.settings-toggle.active .settings-toggle-knob {
+  transform: translateX(20px);
+}
+
+.settings-heartbeat-card {
+  gap: var(--space-md);
+}
+
+.settings-heartbeat-history-link {
+  justify-self: start;
+  border-color: var(--border-primary);
+  color: var(--accent-primary);
+  font-size: 0.8125rem;
+}
+
 .settings-section-heading {
   display: flex;
   flex-direction: column;

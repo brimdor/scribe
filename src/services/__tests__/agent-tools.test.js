@@ -144,7 +144,7 @@ describe('agent tools service', () => {
     });
 
     expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls[0][0].tools).toHaveLength(18);
+    expect(create.mock.calls[0][0].tools).toHaveLength(19);
     expect(create.mock.calls[0][0].tool_choice).toBe('auto');
     expect(messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant' }),

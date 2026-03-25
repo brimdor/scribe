@@ -230,10 +230,15 @@ export function createMockState({ authenticated = false, oauth = false } = {}) {
       ['openaiOAuthPendingFlow', null],
       ['selectedRepo', null],
       ['theme', null],
+      ['heartbeatEnabled', false],
+      ['heartbeatIntervalMinutes', 60],
+      ['agentVerbosity', 'detailed'],
+      ['agentAutoPublish', 'ask'],
     ]),
     threads: [],
     messages: [],
     schemas: [],
+    heartbeats: [],
     repoFiles: new Map([
       ['README.md', '# ScribeVault\n\nA mocked vault for browser E2E tests.\n'],
       ['Inbox/existing-note.md', '# Existing Note\n\nStored in the inbox.\n'],
@@ -616,6 +621,43 @@ export async function installScribeApiMocks(page, state) {
 
     if (pathname === '/api/github/pulls' && method === 'GET') {
       return json(route, 200, { pulls: [] });
+    }
+
+    if (pathname === '/api/storage/heartbeats' && method === 'GET') {
+      const limit = parseInt(searchParams.get('limit') || '20', 10);
+      const offset = parseInt(searchParams.get('offset') || '0', 10);
+      const slice = state.heartbeats.slice(offset, offset + limit);
+      return json(route, 200, { heartbeats: slice, total: state.heartbeats.length });
+    }
+
+    if (pathname === '/api/storage/heartbeats' && method === 'POST') {
+      if (!body.startedAt || !body.completedAt) {
+        return json(route, 400, { error: 'startedAt and completedAt are required.' });
+      }
+      if (!Array.isArray(body.checklist)) {
+        return json(route, 400, { error: 'checklist array is required.' });
+      }
+      if (typeof body.rating !== 'number' || body.rating < 0 || body.rating > 5) {
+        return json(route, 400, { error: 'rating must be a number between 0 and 5.' });
+      }
+      const heartbeat = {
+        id: `hb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...body,
+      };
+      state.heartbeats.unshift(heartbeat);
+      return json(route, 201, { heartbeat });
+    }
+
+    if (pathname === '/api/agent/workspace-state' && method === 'GET') {
+      return json(route, 200, {
+        noteCount: state.repoFiles.size,
+        repoStatus: 'synced',
+        recentActivity: [],
+        tagDistribution: { project: 1, research: 1 },
+        directoryBreakdown: { Inbox: 1, Projects: 1 },
+        lastSyncAt: null,
+        assignedRepo: `${state.settings.get('githubOwner')}/${state.settings.get('githubRepo')}`,
+      });
     }
 
     if (pathname === '/api/github/publish' && method === 'POST') {

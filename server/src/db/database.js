@@ -78,10 +78,32 @@ function migrateToV1(db) {
   db.pragma('user_version = 1');
 }
 
+function migrateToV2(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS heartbeat_executions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER NOT NULL,
+      checklist_blob TEXT NOT NULL,
+      rating INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_heartbeat_user_started ON heartbeat_executions(user_id, started_at DESC);
+  `);
+
+  db.pragma('user_version = 2');
+}
+
 function runMigrations(db) {
   const currentVersion = db.pragma('user_version', { simple: true });
   if (currentVersion < 1) {
     migrateToV1(db);
+  }
+  if (currentVersion < 2) {
+    migrateToV2(db);
   }
 }
 

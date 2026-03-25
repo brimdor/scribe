@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import Sidebar from '../Sidebar/Sidebar';
 import SettingsPanel from '../Settings/SettingsPanel';
+import HeartbeatPanel from '../Heartbeat/HeartbeatPanel';
 import TopBar from '../TopBar/TopBar';
 import ChatWindow from '../Chat/ChatWindow';
 import InputConsole from '../Chat/InputConsole';
@@ -12,7 +13,7 @@ export default function Layout() {
   const [activeThreadId, setActiveThreadId] = useState(null);
   const [activeSchema, setActiveSchema] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { isSettingsOpen, openSettings, closeSettings } = useSettings();
+  const { isSettingsOpen, openSettings, closeSettings, isHeartbeatPanelOpen, closeHeartbeatPanel } = useSettings();
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen(prev => !prev);
@@ -81,6 +82,7 @@ export default function Layout() {
           refreshKey={refreshKey}
         />
         <SettingsPanel isOpen={isSettingsOpen} onClose={closeSettings} />
+        <HeartbeatPanel isOpen={isHeartbeatPanelOpen} onClose={closeHeartbeatPanel} />
       </main>
     </div>
   );

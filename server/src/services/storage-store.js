@@ -1,8 +1,25 @@
+import crypto from 'node:crypto';
 import { getDatabase } from '../db/database.js';
 import { decryptJson, encryptJson } from '../utils/crypto.js';
 
 function now() {
   return Date.now();
+}
+
+function deserializeHeartbeat(row) {
+  if (!row) {
+    return null;
+  }
+
+  const checklist = decryptJson(row.checklist_blob) || [];
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    checklist,
+    rating: row.rating,
+    status: row.status,
+  };
 }
 
 function asBooleanInt(value) {
@@ -280,4 +297,59 @@ export function saveSchema(userId, schema) {
   `).get(schema.id, userId);
 
   return deserializeSchema(row);
+}
+
+export function listHeartbeats(userId, { limit = 20, offset = 0 } = {}) {
+  const db = getDatabase();
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+
+  const rows = db.prepare(`
+    SELECT id, started_at, completed_at, checklist_blob, rating, status
+    FROM heartbeat_executions
+    WHERE user_id = ?
+    ORDER BY started_at DESC
+    LIMIT ? OFFSET ?
+  `).all(userId, safeLimit, safeOffset);
+
+  const countRow = db.prepare('SELECT COUNT(*) as total FROM heartbeat_executions WHERE user_id = ?').get(userId);
+
+  return {
+    heartbeats: rows.map(deserializeHeartbeat),
+    total: countRow?.total || 0,
+  };
+}
+
+export function saveHeartbeat(userId, heartbeat) {
+  const db = getDatabase();
+  const id = heartbeat.id || crypto.randomUUID();
+  const startedAt = Number(heartbeat.startedAt) || now();
+  const completedAt = Number(heartbeat.completedAt) || now();
+  const checklist = Array.isArray(heartbeat.checklist) ? heartbeat.checklist : [];
+  const rating = Math.min(Math.max(Number(heartbeat.rating) || 0, 0), 5);
+  const status = rating >= 4 ? 'passed' : 'failed';
+
+  db.prepare(`
+    INSERT INTO heartbeat_executions (id, user_id, started_at, completed_at, checklist_blob, rating, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, userId, startedAt, completedAt, encryptJson(checklist), rating, status);
+
+  const row = db.prepare(`
+    SELECT id, started_at, completed_at, checklist_blob, rating, status
+    FROM heartbeat_executions
+    WHERE id = ? AND user_id = ?
+  `).get(id, userId);
+
+  return deserializeHeartbeat(row);
+}
+
+export function getHeartbeat(userId, heartbeatId) {
+  const db = getDatabase();
+  const row = db.prepare(`
+    SELECT id, started_at, completed_at, checklist_blob, rating, status
+    FROM heartbeat_executions
+    WHERE id = ? AND user_id = ?
+  `).get(heartbeatId, userId);
+
+  return deserializeHeartbeat(row);
 }
