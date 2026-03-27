@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { getConfig } from '../config/env.js';
+import { runIndexMigrations } from './migrations/migrate-v3-repo-index.js';
 
 let dbInstance = null;
 
@@ -104,6 +105,9 @@ function runMigrations(db) {
   }
   if (currentVersion < 2) {
     migrateToV2(db);
+  }
+  if (currentVersion < 3) {
+    runIndexMigrations(db);
   }
 }
 

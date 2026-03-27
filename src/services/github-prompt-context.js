@@ -15,11 +15,15 @@ import {
 } from './github-shared';
 import {
   findLocalRepoNotesByTag,
+  getRepoIndexStatus,
   listLocalRepoNoteTags,
   listLocalRepoNotes,
   listLocalRepoTree,
+  listRepoIndexNotes,
+  listRepoIndexTags,
   readLocalRepoFile,
   searchLocalRepoFiles,
+  searchRepoIndex,
   syncAssignedRepo,
 } from './github-local-repo';
 
@@ -162,11 +166,134 @@ export async function buildRepoContextForPrompt(prompt, { reason = 'assistant-to
   const sync = shouldRunRepoSyncTool(prompt)
     ? await runRepoSyncToolForPrompt(prompt, { reason })
     : null;
+
+  // Check if the index is available (graceful — if the API call fails, we fall back to filesystem)
+  let indexStatus = null;
+  try {
+    indexStatus = await getRepoIndexStatus();
+  } catch {
+    // Index API unavailable (tests, no server, or repo not yet synced) — fall back to filesystem
+  }
+
+  const useIndex = indexStatus?.indexed === true;
+
   let tree = null;
   let noteTags = null;
   let notes = null;
   const taggedNotes = [];
   const searches = [];
+
+  if (useIndex) {
+    // ── Indexed path: fast FTS queries ──────────────────────────────────────
+
+    if (TAG_HINT_PATTERN.test(prompt)) {
+      try {
+        const tagResult = await listRepoIndexTags();
+        noteTags = { tags: tagResult.tags };
+      } catch {
+        noteTags = null;
+      }
+    }
+
+    if (NOTE_HINT_PATTERN.test(prompt)) {
+      try {
+        const notesResult = await listRepoIndexNotes({ limit: 12 });
+        notes = { notes: notesResult.notes };
+      } catch {
+        notes = null;
+      }
+    }
+
+    for (const tag of extractPromptTags(prompt)) {
+      try {
+        const tagged = await searchRepoIndex({ query: `#${tag}`, limit: 8 });
+        taggedNotes.push({ tag, notes: tagged.results || [] });
+      } catch {
+        // Ignore tag lookup failures.
+      }
+    }
+
+    for (const query of extractPromptSearchQueries(prompt)) {
+      try {
+        const search = await searchRepoIndex({ query, limit: 5 });
+        searches.push(search);
+      } catch {
+        // Ignore search failures.
+      }
+    }
+
+    // Read requested files directly from the filesystem (still needed for content)
+    const requestedFiles = extractPromptFilePaths(prompt);
+    for (const search of searches) {
+      for (const result of search?.results || []) {
+        if (requestedFiles.length >= MAX_CONTEXT_FILES) break;
+        if (!requestedFiles.includes(result.path)) {
+          requestedFiles.push(result.path);
+        }
+      }
+    }
+
+    if (!requestedFiles.length && noteTags?.tags?.length === 0) {
+      // No explicit files requested and no tags — grab README from index
+      const readmeResult = await searchRepoIndex({ query: 'readme', limit: 1 });
+      if (readmeResult?.results?.[0]?.path) {
+        requestedFiles.push(readmeResult.results[0].path);
+      }
+    }
+
+    const files = [];
+    for (const nextPath of requestedFiles.slice(0, MAX_CONTEXT_FILES)) {
+      try {
+        const file = await readLocalRepoFile({ filePath: nextPath });
+        files.push(file);
+      } catch {
+        // Ignore unreadable paths.
+      }
+    }
+
+    const sections = [];
+    if (sync) {
+      sections.push(`Repository sync result: ${sync.status}${sync.message ? ` - ${sync.message}` : ''}`);
+    }
+
+    if (noteTags?.tags?.length) {
+      sections.push(`Repository note tags:\n${noteTags.tags.slice(0, 20).map((entry) => `- ${entry.tag} (${entry.count})`).join('\n')}`);
+    }
+
+    if (notes?.notes?.length) {
+      sections.push(`Repository notes:\n${notes.notes.slice(0, 12).map((note) => `- ${note.path} - ${note.title}${note.tags?.length ? ` [${note.tags.join(', ')}]` : ''}`).join('\n')}`);
+    }
+
+    if (taggedNotes.length) {
+      sections.push(`Notes matching requested tags:\n${taggedNotes.flatMap((entry) => (entry?.notes || []).map((note) => `- ${entry.tag}: ${note.path} - ${note.title}`)).slice(0, 12).join('\n')}`);
+    }
+
+    if (searches.length) {
+      sections.push(`Repository search results:\n${searches.flatMap((s) => (s?.results || []).map((r) => `- ${r.path} - ${r.snippet || r.title}`)).slice(0, 12).join('\n')}`);
+    }
+
+    if (files.length) {
+      sections.push(`Repository file excerpts:\n${files.map(formatFileSnippet).join('\n\n')}`);
+    }
+
+    if (!sections.length) {
+      return null;
+    }
+
+    return {
+      sync,
+      tree,
+      noteTags,
+      notes,
+      taggedNotes,
+      searches,
+      files,
+      contextText: trimContext(sections.join('\n\n')),
+      indexed: true,
+    };
+  }
+
+  // ── Fallback: synchronous filesystem scan ─────────────────────────────────
 
   try {
     tree = await listLocalRepoTree();
@@ -280,5 +407,6 @@ export async function buildRepoContextForPrompt(prompt, { reason = 'assistant-to
     searches,
     files,
     contextText: trimContext(sections.join('\n\n')),
+    indexed: false,
   };
 }

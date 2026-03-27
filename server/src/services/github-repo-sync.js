@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { getConfig } from '../config/env.js';
 import { getSetting } from './storage-store.js';
 import { getTokenForUser } from './user-store.js';
+import { indexRepoIncremental } from './repo-index-service.js';
 
 const SAFE_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 
@@ -453,7 +454,7 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
 
     const remoteCheck = await verifyRepoRemote(assignment.repoPath, assignment);
 
-    return {
+    const result = {
       status: 'cloned',
       reason,
       syncState: 'cloned',
@@ -465,6 +466,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
       remoteUrl: remoteCheck.remoteUrl,
       message: 'Repository cloned successfully.',
     };
+    triggerBackgroundIndexing(userId, assignment);
+    return result;
   }
 
   if (!hasGitMetadata) {
@@ -475,7 +478,7 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
 
   const pullSafety = await evaluatePullSafety(assignment.repoPath, token);
   if (!pullSafety.canPull) {
-    return {
+    const result = {
       status: 'skipped',
       reason,
       syncState: pullSafety.syncState,
@@ -487,6 +490,8 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
       remoteUrl: remoteCheck.remoteUrl,
       message: pullSafety.message,
     };
+    triggerBackgroundIndexing(userId, assignment);
+    return result;
   }
 
   await runGit([
@@ -496,7 +501,7 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
     '--ff-only',
   ], { token });
 
-  return {
+  const result = {
     status: 'pulled',
     reason,
     syncState: 'pulled',
@@ -508,4 +513,24 @@ export async function syncAssignedRepoForUser({ userId, username, owner, repo, r
     remoteUrl: remoteCheck.remoteUrl,
     message: 'Repository updated successfully.',
   };
+  triggerBackgroundIndexing(userId, assignment);
+  return result;
+}
+
+// ── Post-sync indexing ────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget background indexer. Called after every sync completion.
+ * Never throws and never blocks the caller.
+ */
+function triggerBackgroundIndexing(userId, assignment) {
+  indexRepoIncremental({
+    userId,
+    owner: assignment.owner,
+    repo: assignment.repo,
+    repoPath: assignment.repoPath,
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[repo-index] Background index failed:', err?.message);
+  });
 }

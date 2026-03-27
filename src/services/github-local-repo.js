@@ -312,3 +312,39 @@ export async function readLocalRepoNoteFrontmatter({ owner, repo, filePath } = {
   const response = await apiRequest(buildPathWithQuery('/api/github/repo/note/frontmatter', params));
   return response.note;
 }
+
+// ── Repo index API ────────────────────────────────────────────────────────────
+
+export async function searchRepoIndex({ query, limit = 20 } = {}) {
+  const response = await apiRequest('/api/repo-index/search', {
+    method: 'POST',
+    body: { query, limit },
+  });
+  return response;
+}
+
+export async function listRepoIndexNotes({ dir = '', limit = 60, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (dir) params.set('dir', dir);
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  const response = await apiRequest(buildPathWithQuery('/api/repo-index/notes', params));
+  return response;
+}
+
+export async function listRepoIndexTags() {
+  const response = await apiRequest('/api/repo-index/tags');
+  return response;
+}
+
+export async function getRepoIndexStatus() {
+  const response = await apiRequest('/api/repo-index/status');
+  return response;
+}
+
+export async function reindexRepo() {
+  const response = await apiRequest('/api/repo-index/reindex', {
+    method: 'POST',
+  });
+  return response;
+}

@@ -6,6 +6,7 @@ import {
   resolveRepoTarget,
   resolveWithinRepo,
 } from './github-repo-files-shared.js';
+import { indexSingleFile } from './repo-index-service.js';
 
 export async function writeRepoFileForUser({
   userId,
@@ -43,6 +44,17 @@ export async function writeRepoFileForUser({
   }
 
   await fsPromises.writeFile(absolutePath, content, 'utf8');
+
+  indexSingleFile({
+    userId,
+    owner,
+    repo,
+    filePath: normalizedPath,
+    repoPath: target.repoPath,
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[repo-index] Failed to index written file:', err?.message);
+  });
 
   return {
     ...buildToolTarget(target),
@@ -95,6 +107,19 @@ export async function moveRepoFileForUser({
 
   await fsPromises.rename(source.absolutePath, destination.absolutePath);
 
+  const cleanup = async () => {
+    try {
+      await indexSingleFile({ userId, owner, repo, filePath: source.normalizedPath, repoPath: target.repoPath });
+    } catch { /* already deleted from index */ }
+  };
+  const indexNew = async () => {
+    try {
+      await indexSingleFile({ userId, owner, repo, filePath: destination.normalizedPath, repoPath: target.repoPath });
+    } catch { /* swallow */ }
+  };
+  cleanup().catch(() => {});
+  indexNew().catch(() => {});
+
   return {
     ...buildToolTarget(target),
     fromPath: source.normalizedPath,
@@ -117,6 +142,17 @@ export async function deleteRepoFileForUser({ userId, username, owner, repo, fil
   }
 
   await fsPromises.unlink(absolutePath);
+
+  indexSingleFile({
+    userId,
+    owner,
+    repo,
+    filePath: normalizedPath,
+    repoPath: target.repoPath,
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[repo-index] Failed to remove deleted file from index:', err?.message);
+  });
 
   return {
     ...buildToolTarget(target),

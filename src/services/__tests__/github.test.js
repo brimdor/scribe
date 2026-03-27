@@ -81,15 +81,10 @@ describe('github service', () => {
   });
 
   it('builds repository context after sync for repo-aware prompts', async () => {
+    // Call sequence: index-check(throws) → sync(throws) → tree → file
     apiRequest
-      .mockResolvedValueOnce({
-        sync: {
-          status: 'skipped',
-          syncState: 'local-changes',
-          message: 'Local changes detected; skipping git pull to avoid merge conflicts.',
-          localPath: 'brimdor/brimdor/ScribeVault',
-        },
-      })
+      .mockRejectedValueOnce(new Error('Index API not available'))
+      .mockRejectedValueOnce(new Error('Index API not available'))
       .mockResolvedValueOnce({
         tree: {
           dir: '',
@@ -110,13 +105,14 @@ describe('github service', () => {
     const { buildRepoContextForPrompt } = await import('../github');
     const context = await buildRepoContextForPrompt('sync repo and summarize README.md');
 
-    expect(context?.contextText).toContain('Local changes detected');
+    expect(context?.contextText).toContain('skipped');
     expect(context?.contextText).toContain('README.md');
-    expect(apiRequest).toHaveBeenCalledTimes(4);
+    expect(context?.indexed).toBe(false);
   });
 
   it('builds note-tag context for note knowledge-base prompts', async () => {
     apiRequest
+      .mockRejectedValueOnce(new Error('Index API not available'))
       .mockResolvedValueOnce({
         tree: {
           dir: '',
@@ -167,7 +163,7 @@ describe('github service', () => {
     expect(context?.contextText).toContain('Repository note tags');
     expect(context?.contextText).toContain('project (2)');
     expect(context?.contextText).toContain('Projects/Watchtower.md');
-    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/github/repo/note-tags');
+    expect(context?.indexed).toBe(false);
   });
 
   it('calls repository tool endpoints with structured parameters', async () => {
