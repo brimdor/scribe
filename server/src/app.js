@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import agentRoutes from './routes/agent-routes.js';
+import aiRoutes from './routes/ai-routes.js';
 import authRoutes from './routes/auth-routes.js';
 import debugRoutes from './routes/debug-routes.js';
 import githubRoutes from './routes/github-routes.js';
@@ -33,8 +34,9 @@ export function createApp() {
     res.status(200).json({ status: 'ok' });
   });
 
-  app.use('/api/auth', authRoutes);
   app.use('/api/agent', agentRoutes);
+  app.use('/api/ai', aiRoutes);
+  app.use('/api/auth', authRoutes);
   app.use('/api/debug', debugRoutes);
   app.use('/api/storage', storageRoutes);
   app.use('/api/github', githubRoutes);

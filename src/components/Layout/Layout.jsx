@@ -5,6 +5,7 @@ import HeartbeatPanel from '../Heartbeat/HeartbeatPanel';
 import TopBar from '../TopBar/TopBar';
 import ChatWindow from '../Chat/ChatWindow';
 import InputConsole from '../Chat/InputConsole';
+import ErrorBoundary from '../ErrorBoundary';
 import { useSettings } from '../../context/SettingsContext';
 import './Layout.css';
 
@@ -81,7 +82,9 @@ export default function Layout() {
           onThreadCreated={handleThreadCreated}
           refreshKey={refreshKey}
         />
-        <SettingsPanel isOpen={isSettingsOpen} onClose={closeSettings} />
+        <ErrorBoundary>
+          <SettingsPanel isOpen={isSettingsOpen} onClose={closeSettings} />
+        </ErrorBoundary>
         <HeartbeatPanel isOpen={isHeartbeatPanelOpen} onClose={closeHeartbeatPanel} />
       </main>
     </div>

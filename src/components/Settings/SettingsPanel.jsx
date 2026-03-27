@@ -41,6 +41,8 @@ export default function SettingsPanel({ isOpen, onClose }) {
   const [repos, setRepos] = useState([]);
   const [fetchingOrgs, setFetchingOrgs] = useState(false);
   const [fetchingRepos, setFetchingRepos] = useState(false);
+  const [orgFetchFailed, setOrgFetchFailed] = useState(false);
+  const [repoFetchFailed, setRepoFetchFailed] = useState(false);
   const [syncingRepo, setSyncingRepo] = useState(false);
   const [repoSyncMeta, setRepoSyncMeta] = useState(null);
 
@@ -52,14 +54,23 @@ export default function SettingsPanel({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen && user) {
       setFetchingOrgs(true);
+      setOrgs([{ login: user.login }]);
+
+      const timeoutId = setTimeout(() => {
+        setFetchingOrgs(false);
+        setOrgs([{ login: user.login }]);
+      }, 10000);
+
       getOrgs()
         .then(orgsData => {
-          // User's own login + organizations
+          clearTimeout(timeoutId);
+          setOrgFetchFailed(false);
           setOrgs([{ login: user.login }, ...orgsData]);
         })
         .catch(err => {
+          clearTimeout(timeoutId);
           console.error('Failed to fetch orgs', err);
-          // Fallback to just user if fetching orgs fails
+          setOrgFetchFailed(true);
           setOrgs([{ login: user.login }]);
         })
         .finally(() => setFetchingOrgs(false));
@@ -69,9 +80,24 @@ export default function SettingsPanel({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen && form.githubOwner) {
       setFetchingRepos(true);
+      setRepos([]);
+
+      const timeoutId = setTimeout(() => {
+        setFetchingRepos(false);
+      }, 10000);
+
       getRepos(form.githubOwner)
-        .then(reposData => setRepos(reposData))
-        .catch(err => console.error('Failed to fetch repos', err))
+        .then(reposData => {
+          clearTimeout(timeoutId);
+          setRepoFetchFailed(false);
+          setRepos(reposData);
+        })
+        .catch(err => {
+          clearTimeout(timeoutId);
+          console.error('Failed to fetch repos', err);
+          setRepoFetchFailed(true);
+          setRepos([]);
+        })
         .finally(() => setFetchingRepos(false));
     } else {
       setRepos([]);
@@ -169,6 +195,11 @@ export default function SettingsPanel({ isOpen, onClose }) {
       }
 
       return { tone: 'info', label: 'Skipped' };
+    }
+
+    // Partial success: clone/pull succeeded but publish had issues
+    if (sync.status === 'published' || sync.syncState === 'cloned' || sync.syncState === 'pulled') {
+      return { tone: 'warning', label: 'Partial' };
     }
 
     return { tone: 'info', label: 'Unknown' };
@@ -314,10 +345,19 @@ export default function SettingsPanel({ isOpen, onClose }) {
   };
 
   const manualKeyConfigured = Boolean(settings.agentApiKeyConfigured) && !clearAgentApiKey;
+  const showKeyBadge = settings.agentApiKeyConfigured !== undefined;
 
   return (
     <>
       <div className="settings-panel-backdrop" onClick={onClose} />
+      {loading && (
+        <div className="settings-loading-overlay" aria-live="polite">
+          <div className="settings-loading-content">
+            <div className="settings-loading-spinner">⟳</div>
+            <p>Loading saved settings...</p>
+          </div>
+        </div>
+      )}
       <aside className="settings-panel" aria-label="Settings panel" role="dialog" aria-modal="true">
         <div className="settings-panel-header">
           <div>
@@ -340,6 +380,8 @@ export default function SettingsPanel({ isOpen, onClose }) {
               repos={repos}
               fetchingOrgs={fetchingOrgs}
               fetchingRepos={fetchingRepos}
+              orgFetchFailed={orgFetchFailed}
+              repoFetchFailed={repoFetchFailed}
               syncingRepo={syncingRepo}
               saving={saving}
               loading={loading}
@@ -351,7 +393,6 @@ export default function SettingsPanel({ isOpen, onClose }) {
 
             <AIProviderSettingsSection
               form={form}
-              settings={settings}
               fetchingModels={fetchingModels}
               agentModels={agentModels}
               toolCatalog={toolCatalog}
@@ -367,6 +408,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
               openAIOAuthSession={openAIOAuthSession}
               devicePendingFlow={devicePendingFlow}
               manualKeyConfigured={manualKeyConfigured}
+              showKeyBadge={showKeyBadge}
               onChange={handleChange}
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
@@ -426,6 +468,16 @@ export default function SettingsPanel({ isOpen, onClose }) {
                   </strong>
                 </div>
               )}
+              <div className="settings-card-row">
+                <span>Scheduler</span>
+                <span className={`settings-oauth-badge ${
+                  heartbeatStatus.status === 'executing' ? 'info' :
+                  form.heartbeatEnabled ? 'success' : 'error'
+                }`}>
+                  {heartbeatStatus.status === 'executing' ? 'Running...' :
+                   form.heartbeatEnabled ? 'Active' : 'Inactive'}
+                </span>
+              </div>
 
               <button
                 type="button"
@@ -458,15 +510,15 @@ export default function SettingsPanel({ isOpen, onClose }) {
             </p>
           </section>
 
-          {(error || status || loading || openAIOAuthMessage) && (
+          {(error || status || openAIOAuthMessage) && (
             <div className={`settings-status ${error ? 'error' : connectionTone}`}>
-              {loading ? 'Loading saved settings...' : error || openAIOAuthMessage || status}
+              {error || openAIOAuthMessage || status}
             </div>
           )}
 
           <div className="settings-panel-actions">
             <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={saving || loading || oauthBusy}>
+            <button type="submit" className="btn-primary" disabled={saving || oauthBusy}>
               {saving ? 'Saving...' : 'Save settings'}
             </button>
           </div>
