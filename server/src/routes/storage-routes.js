@@ -28,6 +28,10 @@ const APP_SETTINGS_KEYS = [
   'openaiConnectionMethod',
   'agentBaseUrl',
   'agentModel',
+  'heartbeatEnabled',
+  'heartbeatIntervalMinutes',
+  'agentVerbosity',
+  'agentAutoPublish',
 ];
 const BOOTSTRAP_SETTING_KEYS = [
   ...APP_SETTINGS_KEYS,
@@ -42,19 +46,27 @@ function normalizeSettingString(value) {
 }
 
 function normalizeAppSettingsPayload(payload = {}) {
-  return Object.fromEntries(APP_SETTINGS_KEYS.map((key) => {
-    const nextValue = normalizeSettingString(payload[key]);
+  const result = {};
 
+  for (const key of APP_SETTINGS_KEYS) {
     if (key === 'openaiConnectionMethod') {
-      return [key, nextValue === 'oauth' ? 'oauth' : 'manual'];
+      result[key] = payload[key] === 'oauth' ? 'oauth' : 'manual';
+    } else if (key === 'agentBaseUrl') {
+      result[key] = String(payload[key] || '').trim().replace(/\/+$/, '');
+    } else if (key === 'heartbeatEnabled') {
+      result[key] = Boolean(payload[key]);
+    } else if (key === 'heartbeatIntervalMinutes') {
+      result[key] = Math.min(Math.max(Number(payload[key]) || 60, 1), 1440);
+    } else if (key === 'agentVerbosity') {
+      result[key] = payload[key] === 'concise' ? 'concise' : 'detailed';
+    } else if (key === 'agentAutoPublish') {
+      result[key] = ['ask', 'auto', 'never'].includes(payload[key]) ? payload[key] : 'ask';
+    } else {
+      result[key] = typeof payload[key] === 'string' ? payload[key].trim() : String(payload[key] || '').trim();
     }
+  }
 
-    if (key === 'agentBaseUrl') {
-      return [key, nextValue.replace(/\/+$/, '')];
-    }
-
-    return [key, nextValue];
-  }));
+  return result;
 }
 
 function normalizeOpenAIOAuthSession(session) {
