@@ -7,6 +7,38 @@
   animation: fadeIn var(--transition-fast) ease-out;
 }
 
+.settings-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-secondary);
+  opacity: 0.92;
+  z-index: calc(var(--z-modal) + 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+.settings-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  color: var(--text-tertiary);
+  font-size: 0.9375rem;
+}
+
+.settings-loading-spinner {
+  font-size: 1.75rem;
+  animation: spin 1s linear infinite;
+  color: var(--accent-primary);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .settings-panel {
   position: fixed;
   top: 0;
@@ -227,6 +259,11 @@
 .settings-oauth-badge.info {
   background: rgba(59, 130, 246, 0.14);
   color: var(--accent-primary);
+}
+
+.settings-oauth-badge.warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--accent-warning);
 }
 
 .settings-oauth-device-flow {

@@ -35,6 +35,8 @@ export function GitHubSettingsSection({
   repos,
   fetchingOrgs,
   fetchingRepos,
+  orgFetchFailed,
+  repoFetchFailed,
   syncingRepo,
   saving,
   loading,
@@ -83,6 +85,11 @@ export function GitHubSettingsSection({
             </>
           )}
         </select>
+        {orgFetchFailed && (
+          <span className="settings-helper-text" style={{ color: 'var(--accent-warning)' }}>
+            ⚠️ Could not load organizations. Showing your personal account only.
+          </span>
+        )}
       </label>
 
       <label className="settings-field">
@@ -106,6 +113,11 @@ export function GitHubSettingsSection({
             </>
           )}
         </select>
+        {repoFetchFailed && (
+          <span className="settings-helper-text" style={{ color: 'var(--accent-warning)' }}>
+            ⚠️ Could not load repositories. Check network or try again.
+          </span>
+        )}
       </label>
 
       <div className="settings-sync-actions">
@@ -130,7 +142,6 @@ export function GitHubSettingsSection({
 
 export function AIProviderSettingsSection({
   form,
-  settings,
   fetchingModels,
   agentModels,
   toolCatalog,
@@ -146,6 +157,7 @@ export function AIProviderSettingsSection({
   openAIOAuthSession,
   devicePendingFlow,
   manualKeyConfigured,
+  showKeyBadge,
   onChange,
   onConnect,
   onDisconnect,
@@ -235,7 +247,7 @@ export function AIProviderSettingsSection({
             />
           </label>
 
-          {settings.agentApiKeyConfigured && (
+          {showKeyBadge && manualKeyConfigured && (
             <div className="settings-sync-meta">
               <span className={`settings-oauth-badge settings-sync-badge ${clearAgentApiKey ? 'error' : 'success'}`}>
                 {clearAgentApiKey ? 'Key will be removed' : 'Key saved on server'}
