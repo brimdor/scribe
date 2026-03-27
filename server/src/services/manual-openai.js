@@ -9,9 +9,15 @@ function readSetting(userId, key) {
 }
 
 function createConfig(userId) {
-  const baseURL = readSetting(userId, 'agentBaseUrl').replace(/\/+$/, '');
+  let baseURL = readSetting(userId, 'agentBaseUrl').replace(/\/+$/, '');
   if (!baseURL) {
     throw new Error('Agent base URL is required for manual provider mode.');
+  }
+
+  // Auto-append /v1 for OpenAI compatibility (e.g., Ollama, local models)
+  // Only append if not already present, to support explicit /v1 URLs
+  if (!baseURL.includes('/v1')) {
+    baseURL = `${baseURL}/v1`;
   }
 
   return {
