@@ -162,6 +162,10 @@ function buildAppSettings(state) {
     agentApiKey: '',
     agentApiKeyConfigured: Boolean(state.settings.get('agentApiKey')),
     agentModel: state.settings.get('agentModel') || '',
+    heartbeatEnabled: state.settings.get('heartbeatEnabled') ?? false,
+    heartbeatIntervalMinutes: state.settings.get('heartbeatIntervalMinutes') ?? 60,
+    agentVerbosity: state.settings.get('agentVerbosity') ?? 'detailed',
+    agentAutoPublish: state.settings.get('agentAutoPublish') ?? 'ask',
   };
 }
 
@@ -301,6 +305,10 @@ export async function installScribeApiMocks(page, state) {
         state.settings.set('openaiConnectionMethod', body.settings.openaiConnectionMethod === 'oauth' ? 'oauth' : 'manual');
         state.settings.set('agentBaseUrl', String(body.settings.agentBaseUrl || '').trim().replace(/\/+$/, ''));
         state.settings.set('agentModel', String(body.settings.agentModel || '').trim());
+        state.settings.set('heartbeatEnabled', Boolean(body.settings.heartbeatEnabled));
+        state.settings.set('heartbeatIntervalMinutes', Number(body.settings.heartbeatIntervalMinutes) || 60);
+        state.settings.set('agentVerbosity', body.settings.agentVerbosity === 'concise' ? 'concise' : 'detailed');
+        state.settings.set('agentAutoPublish', ['ask', 'auto', 'never'].includes(body.settings.agentAutoPublish) ? body.settings.agentAutoPublish : 'ask');
 
         if (body.settings.clearAgentApiKey) {
           state.settings.set('agentApiKey', '');
